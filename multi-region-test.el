@@ -216,7 +216,27 @@ imitates a click without a drag."
     (multi-region-mode 1)
     (should-not (eq (key-binding [down-mouse-1]) 'multi-region-pdf-mouse-set-region))
     (cl-letf (((symbol-function 'multi-region--pdf-p) (lambda () t)))
-      (should (eq (key-binding [down-mouse-1]) 'multi-region-pdf-mouse-set-region)))))
+      (should (eq (key-binding [down-mouse-1]) 'multi-region-pdf-mouse-set-region))))
+  ;; Likewise C-g, which deselects on all pages there.
+  (with-temp-buffer
+    (multi-region-mode 1)
+    (should (eq (key-binding (kbd "C-g")) 'keyboard-quit))
+    (cl-letf (((symbol-function 'multi-region--pdf-p) (lambda () t)))
+      (should (eq (key-binding (kbd "C-g")) 'multi-region-pdf-keyboard-quit)))))
+
+(ert-deftest multi-region-test-pdf-quit-clears-all-pages ()
+  (multi-region-test--with-pdf t
+    (multi-region-test--select t 1 '(0.1 0.1 0.5 0.2))
+    (multi-region-test--turn-to 3)
+    (multi-region-test--select t 3 '(0.2 0.2 0.6 0.3))
+    (should (= (multi-region--count) 2))
+    (let (quit)
+      (cl-letf (((symbol-function 'keyboard-quit) (lambda () (setq quit t))))
+        (multi-region-pdf-keyboard-quit))
+      (should quit))
+    (should (= (multi-region--count) 0))
+    (multi-region-test--turn-to 1)
+    (should-not pdf-view-active-region)))
 
 (ert-deftest multi-region-test-pdf-format-detection ()
   ;; With nothing selected yet, the form is read from pdf-tools' doc string.

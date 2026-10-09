@@ -62,7 +62,7 @@
 ;;   forgets the regions already on a page when C-drag adds one; with
 ;;   this mode on, C-drag keeps them.  A click without a drag, with or
 ;;   without Control, keeps the selections too; a plain drag starts
-;;   over, as it does in pdf-tools.
+;;   over, as it does in pdf-tools.  C-g deselects on all pages.
 ;;
 ;; Other packages can read the selections with `multi-region-selections'.
 ;;
@@ -369,6 +369,13 @@ nothing leaves them selected, as a click does in a text buffer."
       (setq deactivate-mark nil)
       (pdf-view-display-region))
     (force-mode-line-update)))
+
+(defun multi-region-pdf-keyboard-quit ()
+  "Deselect everything in this PDF, on all pages, then quit.
+\[keyboard-quit] runs this in PDF buffers."
+  (interactive)
+  (multi-region-clear)
+  (keyboard-quit))
 
 (defun multi-region--pdf-set (page edges)
   "Make EDGES, a list of edges on PAGE, the active PDF region."
@@ -790,6 +797,10 @@ In a PDF buffer this adds a region to the page, as
     ;; In PDFs only: a plain click there would deselect everything.
     (define-key map [down-mouse-1]
       `(menu-item "" multi-region-pdf-mouse-set-region
+                  :filter ,(lambda (cmd) (and (multi-region--pdf-p) cmd))))
+    ;; In PDFs only: C-g deselects on all pages, not just this one.
+    (define-key map [remap keyboard-quit]
+      `(menu-item "" multi-region-pdf-keyboard-quit
                   :filter ,(lambda (cmd) (and (multi-region--pdf-p) cmd))))
     (define-key map (kbd "C-c m") multi-region-command-map)
     (define-key map [remap kill-ring-save] #'multi-region-kill-ring-save)
