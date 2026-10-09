@@ -85,6 +85,7 @@
 (defvar nov-documents-index)
 (defvar pdf-view-active-region)
 (defvar pdf-view-selection-style)
+(defvar pdf-view--have-rectangle-region)
 (declare-function pdf-view-mouse-extend-region "ext:pdf-view")
 (declare-function pdf-view-mouse-set-region "ext:pdf-view")
 (declare-function pdf-view-deactivate-region "ext:pdf-view")
@@ -133,6 +134,9 @@ that page is `pdf-view-active-region'.")
 
 (defvar-local multi-region--pdf-timer nil
   "Timer that redraws restored PDF regions.")
+
+(defvar-local multi-region--pdf-shown nil
+  "The window and page image last drawn by `multi-region--pdf-show'.")
 
 (defvar-local multi-region--pdf-paged nil
   "Non-nil once a region of the form (PAGE . EDGES) was seen here.")
@@ -323,6 +327,35 @@ edges, as older pdf-tools keep, already holds them."
                                          (cdr region))))
     region))
 
+;; While the mouse is dragged, pdf-tools draws the page anew at every
+;; step, which is slow on big pages.  A step is skipped when the mouse
+;; has already moved on, and the last one is drawn after the drag.
+
+(defun multi-region--pdf-track (command event page old &optional quiet)
+  "Call pdf-tools' mouse COMMAND with EVENT, drawing only what is needed.
+OLD are edges on PAGE to keep showing and put back afterwards, as
+`multi-region--pdf-merge' does.  With QUIET, the regions on the page
+are not drawn away when COMMAND deselects them first."
+  (let ((display (symbol-function 'pdf-view-display-region))
+        (deactivate (symbol-function 'pdf-view-deactivate-region))
+        skipped)
+    (cl-letf (((symbol-function 'pdf-view-display-region)
+               (lambda (&optional region &rest args)
+                 (if (input-pending-p)
+                     (setq skipped t)
+                   (apply display (multi-region--pdf-merge region page old)
+                          args))))
+              ((symbol-function 'pdf-view-deactivate-region)
+               (if quiet
+                   (lambda () (setq pdf-view-active-region nil))
+                 deactivate)))
+      (funcall command event))
+    (when (and old (eql (car-safe pdf-view-active-region) page))
+      (setq pdf-view-active-region
+            (multi-region--pdf-merge pdf-view-active-region page old)))
+    (when (and skipped (multi-region--pdf-edges))
+      (multi-region--pdf-draw))))
+
 (defun multi-region--pdf-mouse-drag (event)
   "Add the region dragged over with EVENT to the PDF page.
 pdf-tools 1.3 and later start a new region list on every drag, even
@@ -331,26 +364,12 @@ are put back: in what is drawn during the drag, and in the region
 afterwards."
   (let* ((page (and (multi-region--pdf-paged-p)
                     (car-safe pdf-view-active-region)))
-         (old (and page (copy-sequence (multi-region--pdf-edges))))
-         (display (symbol-function 'pdf-view-display-region)))
-    (if (null old)
-        (pdf-view-mouse-extend-region event)
-      (cl-letf (((symbol-function 'pdf-view-display-region)
-                 (lambda (&optional region &rest args)
-                   (apply display (multi-region--pdf-merge region page old)
-                          args))))
-        (pdf-view-mouse-extend-region event))
-      (let ((region (bound-and-true-p pdf-view-active-region)))
-        (cond
-         ((eql (car-safe region) page)
-          (setq pdf-view-active-region
-                (multi-region--pdf-merge region page old)))
-         ;; Dragged on another page, as pdf-view-roll-minor-mode allows.
-         ((numberp (car-safe region))
-          (multi-region--pdf-stash page old))
-         ;; pdf-tools dropped the region: the drag went to another
-         ;; window.
-         (t nil))))
+         (old (and page (copy-sequence (multi-region--pdf-edges)))))
+    (multi-region--pdf-track #'pdf-view-mouse-extend-region event page old)
+    (let ((region (bound-and-true-p pdf-view-active-region)))
+      ;; Dragged on another page, as pdf-view-roll-minor-mode allows.
+      (when (and old (numberp (car-safe region)) (not (eql (car region) page)))
+        (multi-region--pdf-stash page old)))
     (force-mode-line-update)))
 
 (defun multi-region-pdf-mouse-set-region (event)
@@ -361,18 +380,21 @@ nothing leaves them selected, as a click does in a text buffer."
   (interactive "@e")
   (let ((page (multi-region--pdf-live-page))
         (old (copy-sequence (multi-region--pdf-edges))))
-    (pdf-view-mouse-set-region event)
-    (when (and old (null (multi-region--pdf-edges)))
+    ;; Deselect quietly: a click must not make the page blink.
+    (multi-region--pdf-track #'pdf-view-mouse-set-region event nil nil old)
+    (cond
+     ((null old))
+     ((null (multi-region--pdf-edges))
+      ;; Only clicked.  The regions are still drawn; select them again.
       (multi-region--pdf-set page old)
       (let (mark-ring)
         (push-mark-command nil t))
-      (setq deactivate-mark nil)
-      (pdf-view-display-region))
+      (setq deactivate-mark nil)))
     (force-mode-line-update)))
 
 (defun multi-region-pdf-keyboard-quit ()
   "Deselect everything in this PDF, on all pages, then quit.
-\[keyboard-quit] runs this in PDF buffers."
+\\[keyboard-quit] runs this in PDF buffers."
   (interactive)
   (multi-region-clear)
   (keyboard-quit))
@@ -390,14 +412,34 @@ This goes on `pdf-view-before-change-page-hook'."
       (multi-region--pdf-paged-p)       ; Learn the format while we can.
       (multi-region--pdf-stash page (multi-region--pdf-edges)))))
 
+(defun multi-region--pdf-draw ()
+  "Draw the active PDF region the way pdf-tools drew it when selecting.
+Without arguments `pdf-view-display-region' highlights glyph by glyph,
+which can show less than was selected and will be copied."
+  (pdf-view-display-region nil
+                           (bound-and-true-p pdf-view--have-rectangle-region)
+                           (bound-and-true-p pdf-view-selection-style)))
+
 (defun multi-region--pdf-show (buffer window)
-  "Draw the active PDF regions of BUFFER in WINDOW."
+  "Draw the active PDF regions of BUFFER in WINDOW.
+Do nothing if WINDOW already shows them."
   (when (and (buffer-live-p buffer)
              (window-live-p window)
              (eq (window-buffer window) buffer))
     (with-selected-window window
-      (when pdf-view-active-region
-        (pdf-view-display-region)))))
+      (when (and pdf-view-active-region
+                 (not (equal multi-region--pdf-shown
+                             (cons window (image-mode-window-get 'image window)))))
+        (multi-region--pdf-draw)
+        (setq multi-region--pdf-shown
+              (cons window (image-mode-window-get 'image window)))))))
+
+(defun multi-region--pdf-show-now ()
+  "Draw restored PDF regions once the page-turning command is done.
+This runs on `post-command-hook', before the screen is updated, so the
+page appears with its highlights instead of blinking without them."
+  (remove-hook 'post-command-hook #'multi-region--pdf-show-now t)
+  (multi-region--pdf-show (current-buffer) (car multi-region--pdf-shown)))
 
 (defun multi-region--pdf-restore ()
   "Reselect the regions remembered for the page just arrived at.
@@ -411,8 +453,12 @@ This goes on `pdf-view-after-change-page-hook'."
       (let (mark-ring)
         (push-mark-command nil t))
       (setq deactivate-mark nil)
-      ;; Page-turning commands redraw the plain page once more after
-      ;; this hook has run, so draw the highlight when Emacs is idle.
+      ;; Page-turning commands draw the plain page once more after this
+      ;; hook has run, so draw the highlight when the command is done.
+      ;; Some draw it later still, when Emacs is idle; the timer covers
+      ;; them, and does nothing if the highlight is still there.
+      (setq multi-region--pdf-shown (list (selected-window)))
+      (add-hook 'post-command-hook #'multi-region--pdf-show-now nil t)
       (when (timerp multi-region--pdf-timer)
         (cancel-timer multi-region--pdf-timer))
       (setq multi-region--pdf-timer
@@ -571,7 +617,7 @@ In a PDF this is the last region added on the page on display."
           (user-error "No selection on this page"))
          ((cdr edges)
           (multi-region--pdf-set (multi-region--pdf-live-page) (butlast edges))
-          (pdf-view-display-region)
+          (multi-region--pdf-draw)
           (force-mode-line-update))
          (t
           (pdf-view-deactivate-region))))
