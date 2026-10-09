@@ -125,6 +125,65 @@ PAGED non-nil imitates current pdf-tools, where the region is
         (should-not pdf-view-active-region)
         (should-error (multi-region-remove-last) :type 'user-error)))))
 
+(defun multi-region-test--fake-extend (paged new)
+  "Return an imitation of `pdf-view-mouse-extend-region' adding NEW.
+PAGED non-nil imitates pdf-tools 1.3, which starts the region over
+at every drag; nil imitates older ones, which add to it.  NEW nil
+imitates a click without a drag."
+  (lambda (_event)
+    (if paged
+        (setq pdf-view-active-region (list multi-region-test--page))
+      (setq pdf-view-active-region pdf-view-active-region))
+    (when new
+      (pdf-view-display-region
+       (if paged
+           (cons multi-region-test--page (cons new (cdr pdf-view-active-region)))
+         (cons new pdf-view-active-region)))
+      (if paged
+          (setcdr pdf-view-active-region
+                  (append (cdr pdf-view-active-region) (list new)))
+        (setq pdf-view-active-region
+              (append pdf-view-active-region (list new)))))))
+
+(dolist (paged '(t nil))
+  (eval
+   `(ert-deftest ,(intern (format "multi-region-test-pdf-c-drag-%s"
+                                  (if paged "current-pdf-tools" "older-pdf-tools")))
+        ()
+      (multi-region-test--with-pdf ,paged
+        (let (drawn)
+          (cl-letf (((symbol-function 'pdf-view-display-region)
+                     (lambda (&optional region &rest _) (push region drawn))))
+            (multi-region-test--select ,paged 1 '(0.1 0.1 0.5 0.2))
+            (cl-letf (((symbol-function 'pdf-view-mouse-extend-region)
+                       (multi-region-test--fake-extend ,paged '(0.1 0.3 0.5 0.4))))
+              (multi-region-mouse-drag nil))
+            ;; The earlier region stays, while dragging and after.
+            (should (equal (car drawn)
+                           ',(if paged '(1 (0.1 0.1 0.5 0.2) (0.1 0.3 0.5 0.4))
+                               '((0.1 0.3 0.5 0.4) (0.1 0.1 0.5 0.2)))))
+            (should (= (multi-region--count) 2))
+            ;; A click without a drag adds nothing and drops nothing.
+            (cl-letf (((symbol-function 'pdf-view-mouse-extend-region)
+                       (multi-region-test--fake-extend ,paged nil)))
+              (multi-region-mouse-drag nil))
+            (should (equal pdf-view-active-region
+                           ',(if paged '(1 (0.1 0.1 0.5 0.2) (0.1 0.3 0.5 0.4))
+                               '((0.1 0.1 0.5 0.2) (0.1 0.3 0.5 0.4)))))))))))
+
+(ert-deftest multi-region-test-pdf-c-drag-other-page ()
+  ;; With pdf-view-roll-minor-mode a drag can land on another visible
+  ;; page; the regions of the first page are kept for it.
+  (multi-region-test--with-pdf t
+    (multi-region-test--select t 1 '(0.1 0.1 0.5 0.2))
+    (cl-letf (((symbol-function 'pdf-view-mouse-extend-region)
+               (lambda (_)
+                 (setq pdf-view-active-region (list 2 '(0.2 0.2 0.6 0.3))))))
+      (multi-region-mouse-drag nil))
+    (should (= (multi-region--count) 2))
+    (should (equal (mapcar (lambda (s) (plist-get s :page)) (multi-region-selections))
+                   '(1 2)))))
+
 (ert-deftest multi-region-test-pdf-format-detection ()
   ;; With nothing selected yet, the form is read from pdf-tools' doc string.
   (multi-region-test--with-pdf t
