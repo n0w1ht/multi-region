@@ -184,6 +184,40 @@ imitates a click without a drag."
     (should (equal (mapcar (lambda (s) (plist-get s :page)) (multi-region-selections))
                    '(1 2)))))
 
+(dolist (paged '(t nil))
+  (eval
+   `(ert-deftest ,(intern (format "multi-region-test-pdf-click-%s"
+                                  (if paged "current-pdf-tools" "older-pdf-tools")))
+        ()
+      (multi-region-test--with-pdf ,paged
+        (let ((transient-mark-mode t) drag)
+          ;; Like `pdf-view-mouse-set-region': deselect, then add the
+          ;; region dragged over, if any.
+          (cl-letf (((symbol-function 'pdf-view-mouse-set-region)
+                     (lambda (_event)
+                       (setq pdf-view-active-region
+                             (and ,paged (list multi-region-test--page)))
+                       (when drag
+                         (multi-region-test--select ,paged 1 drag)))))
+            (multi-region-test--select ,paged 1 '(0.1 0.1 0.5 0.2) '(0.1 0.3 0.5 0.4))
+            ;; A click keeps the selections.
+            (multi-region-pdf-mouse-set-region nil)
+            (should (= (multi-region--count) 2))
+            (should (equal (multi-region--pdf-edges)
+                           '((0.1 0.1 0.5 0.2) (0.1 0.3 0.5 0.4))))
+            ;; A drag starts over.
+            (setq drag '(0.2 0.5 0.6 0.6))
+            (multi-region-pdf-mouse-set-region nil)
+            (should (equal (multi-region--pdf-edges) '((0.2 0.5 0.6 0.6))))))))))
+
+(ert-deftest multi-region-test-plain-click-binding ()
+  ;; The plain-click command is only bound in PDF buffers.
+  (with-temp-buffer
+    (multi-region-mode 1)
+    (should-not (eq (key-binding [down-mouse-1]) 'multi-region-pdf-mouse-set-region))
+    (cl-letf (((symbol-function 'multi-region--pdf-p) (lambda () t)))
+      (should (eq (key-binding [down-mouse-1]) 'multi-region-pdf-mouse-set-region)))))
+
 (ert-deftest multi-region-test-pdf-format-detection ()
   ;; With nothing selected yet, the form is read from pdf-tools' doc string.
   (multi-region-test--with-pdf t

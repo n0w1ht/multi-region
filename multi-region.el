@@ -60,7 +60,9 @@
 ;;   pdf-tools, which keep the region as (PAGE . EDGES), and older ones,
 ;;   which keep a plain list of edges, are supported.  pdf-tools 1.3
 ;;   forgets the regions already on a page when C-drag adds one; with
-;;   this mode on, C-drag keeps them.
+;;   this mode on, C-drag keeps them.  A click without a drag, with or
+;;   without Control, keeps the selections too; a plain drag starts
+;;   over, as it does in pdf-tools.
 ;;
 ;; Other packages can read the selections with `multi-region-selections'.
 ;;
@@ -84,6 +86,7 @@
 (defvar pdf-view-active-region)
 (defvar pdf-view-selection-style)
 (declare-function pdf-view-mouse-extend-region "ext:pdf-view")
+(declare-function pdf-view-mouse-set-region "ext:pdf-view")
 (declare-function pdf-view-deactivate-region "ext:pdf-view")
 (declare-function pdf-view-display-region "ext:pdf-view")
 (declare-function pdf-info-gettext "ext:pdf-info")
@@ -348,6 +351,23 @@ afterwards."
          ;; pdf-tools dropped the region: the drag went to another
          ;; window.
          (t nil))))
+    (force-mode-line-update)))
+
+(defun multi-region-pdf-mouse-set-region (event)
+  "Start a new PDF region with the mouse, keeping selections on a click.
+EVENT is the button press.  A drag replaces the regions on the page,
+as `pdf-view-mouse-set-region' does.  A click that drags over
+nothing leaves them selected, as a click does in a text buffer."
+  (interactive "@e")
+  (let ((page (multi-region--pdf-live-page))
+        (old (copy-sequence (multi-region--pdf-edges))))
+    (pdf-view-mouse-set-region event)
+    (when (and old (null (multi-region--pdf-edges)))
+      (multi-region--pdf-set page old)
+      (let (mark-ring)
+        (push-mark-command nil t))
+      (setq deactivate-mark nil)
+      (pdf-view-display-region))
     (force-mode-line-update)))
 
 (defun multi-region--pdf-set (page edges)
@@ -767,6 +787,10 @@ In a PDF buffer this adds a region to the page, as
 (defvar multi-region-mode-map
   (let ((map (make-sparse-keymap)))
     (define-key map [C-down-mouse-1] #'multi-region-mouse-drag)
+    ;; In PDFs only: a plain click there would deselect everything.
+    (define-key map [down-mouse-1]
+      `(menu-item "" multi-region-pdf-mouse-set-region
+                  :filter ,(lambda (cmd) (and (multi-region--pdf-p) cmd))))
     (define-key map (kbd "C-c m") multi-region-command-map)
     (define-key map [remap kill-ring-save] #'multi-region-kill-ring-save)
     (define-key map [remap kill-region] #'multi-region-kill-region)
