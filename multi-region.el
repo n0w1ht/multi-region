@@ -1,6 +1,6 @@
 ;;; multi-region.el --- Select several separate regions at once  -*- lexical-binding: t; -*-
 
-;; Version: 0.2.0
+;; Version: 0.2.1
 ;; Package-Requires: ((emacs "27.1"))
 ;; Keywords: convenience, mouse
 
@@ -58,7 +58,11 @@
 ;;   remembers them per page and copies across pages.  Kill, replace,
 ;;   run-command and next/previous do not apply to PDFs.  Both current
 ;;   pdf-tools, which keep the region as (PAGE . EDGES), and older ones,
-;;   which keep a plain list of edges, are supported.
+;;   which keep a plain list of edges, are supported.  pdf-tools 1.3
+;;   forgets the regions already on a page when C-drag adds one; with
+;;   this mode on, C-drag keeps them.  A click without a drag, with or
+;;   without Control, keeps the selections too; a plain drag starts
+;;   over, as it does in pdf-tools.  C-g deselects on all pages.
 ;;
 ;; Other packages can read the selections with `multi-region-selections'.
 ;;
@@ -71,6 +75,7 @@
 
 ;;; Code:
 
+(require 'cl-lib)
 (require 'seq)
 (require 'thingatpt)
 
@@ -80,7 +85,9 @@
 (defvar nov-documents-index)
 (defvar pdf-view-active-region)
 (defvar pdf-view-selection-style)
+(defvar pdf-view--have-rectangle-region)
 (declare-function pdf-view-mouse-extend-region "ext:pdf-view")
+(declare-function pdf-view-mouse-set-region "ext:pdf-view")
 (declare-function pdf-view-deactivate-region "ext:pdf-view")
 (declare-function pdf-view-display-region "ext:pdf-view")
 (declare-function pdf-info-gettext "ext:pdf-info")
@@ -127,6 +134,9 @@ that page is `pdf-view-active-region'.")
 
 (defvar-local multi-region--pdf-timer nil
   "Timer that redraws restored PDF regions.")
+
+(defvar-local multi-region--pdf-shown nil
+  "The window and page image last drawn by `multi-region--pdf-show'.")
 
 (defvar-local multi-region--pdf-paged nil
   "Non-nil once a region of the form (PAGE . EDGES) was seen here.")
@@ -291,6 +301,104 @@ page number in front.  Both are supported."
         (cdr region)
       region)))
 
+(defun multi-region--pdf-live-page ()
+  "Return the page of the active PDF region.
+That is the page in front of the region in current pdf-tools, or else
+the page on display."
+  (let ((region (bound-and-true-p pdf-view-active-region)))
+    (if (numberp (car-safe region))
+        (car region)
+      (multi-region--pdf-page))))
+
+(defun multi-region--pdf-stash (page edges)
+  "Remember EDGES as the regions of PAGE, which is not the live one."
+  (setq multi-region--pdf-regions
+        (assq-delete-all page multi-region--pdf-regions))
+  (when edges
+    (push (cons page (copy-sequence edges)) multi-region--pdf-regions)))
+
+(defun multi-region--pdf-merge (region page old)
+  "Return REGION with the edges OLD put back in front.
+REGION has the form of `pdf-view-active-region'.  OLD are put back
+only if REGION is (PAGE . EDGES) for the same PAGE; a plain list of
+edges, as older pdf-tools keep, already holds them."
+  (if (and old (numberp (car-safe region)) (eql (car region) page))
+      (cons page (append old (seq-remove (lambda (e) (member e old))
+                                         (cdr region))))
+    region))
+
+;; While the mouse is dragged, pdf-tools draws the page anew at every
+;; step, which is slow on big pages.  A step is skipped when the mouse
+;; has already moved on, and the last one is drawn after the drag.
+
+(defun multi-region--pdf-track (command event page old &optional quiet)
+  "Call pdf-tools' mouse COMMAND with EVENT, drawing only what is needed.
+OLD are edges on PAGE to keep showing and put back afterwards, as
+`multi-region--pdf-merge' does.  With QUIET, the regions on the page
+are not drawn away when COMMAND deselects them first."
+  (let ((display (symbol-function 'pdf-view-display-region))
+        (deactivate (symbol-function 'pdf-view-deactivate-region))
+        skipped)
+    (cl-letf (((symbol-function 'pdf-view-display-region)
+               (lambda (&optional region &rest args)
+                 (if (input-pending-p)
+                     (setq skipped t)
+                   (apply display (multi-region--pdf-merge region page old)
+                          args))))
+              ((symbol-function 'pdf-view-deactivate-region)
+               (if quiet
+                   (lambda () (setq pdf-view-active-region nil))
+                 deactivate)))
+      (funcall command event))
+    (when (and old (eql (car-safe pdf-view-active-region) page))
+      (setq pdf-view-active-region
+            (multi-region--pdf-merge pdf-view-active-region page old)))
+    (when (and skipped (multi-region--pdf-edges))
+      (multi-region--pdf-draw))))
+
+(defun multi-region--pdf-mouse-drag (event)
+  "Add the region dragged over with EVENT to the PDF page.
+pdf-tools 1.3 and later start a new region list on every drag, even
+the C-drag that is meant to add to it, so the regions already there
+are put back: in what is drawn during the drag, and in the region
+afterwards."
+  (let* ((page (and (multi-region--pdf-paged-p)
+                    (car-safe pdf-view-active-region)))
+         (old (and page (copy-sequence (multi-region--pdf-edges)))))
+    (multi-region--pdf-track #'pdf-view-mouse-extend-region event page old)
+    (let ((region (bound-and-true-p pdf-view-active-region)))
+      ;; Dragged on another page, as pdf-view-roll-minor-mode allows.
+      (when (and old (numberp (car-safe region)) (not (eql (car region) page)))
+        (multi-region--pdf-stash page old)))
+    (force-mode-line-update)))
+
+(defun multi-region-pdf-mouse-set-region (event)
+  "Start a new PDF region with the mouse, keeping selections on a click.
+EVENT is the button press.  A drag replaces the regions on the page,
+as `pdf-view-mouse-set-region' does.  A click that drags over
+nothing leaves them selected, as a click does in a text buffer."
+  (interactive "@e")
+  (let ((page (multi-region--pdf-live-page))
+        (old (copy-sequence (multi-region--pdf-edges))))
+    ;; Deselect quietly: a click must not make the page blink.
+    (multi-region--pdf-track #'pdf-view-mouse-set-region event nil nil old)
+    (cond
+     ((null old))
+     ((null (multi-region--pdf-edges))
+      ;; Only clicked.  The regions are still drawn; select them again.
+      (multi-region--pdf-set page old)
+      (let (mark-ring)
+        (push-mark-command nil t))
+      (setq deactivate-mark nil)))
+    (force-mode-line-update)))
+
+(defun multi-region-pdf-keyboard-quit ()
+  "Deselect everything in this PDF, on all pages, then quit.
+\\[keyboard-quit] runs this in PDF buffers."
+  (interactive)
+  (multi-region-clear)
+  (keyboard-quit))
+
 (defun multi-region--pdf-set (page edges)
   "Make EDGES, a list of edges on PAGE, the active PDF region."
   (setq pdf-view-active-region
@@ -302,20 +410,36 @@ This goes on `pdf-view-before-change-page-hook'."
   (let ((page (multi-region--pdf-page)))
     (when page
       (multi-region--pdf-paged-p)       ; Learn the format while we can.
-      (setq multi-region--pdf-regions
-            (assq-delete-all page multi-region--pdf-regions))
-      (when (multi-region--pdf-edges)
-        (push (cons page (copy-sequence (multi-region--pdf-edges)))
-              multi-region--pdf-regions)))))
+      (multi-region--pdf-stash page (multi-region--pdf-edges)))))
+
+(defun multi-region--pdf-draw ()
+  "Draw the active PDF region the way pdf-tools drew it when selecting.
+Without arguments `pdf-view-display-region' highlights glyph by glyph,
+which can show less than was selected and will be copied."
+  (pdf-view-display-region nil
+                           (bound-and-true-p pdf-view--have-rectangle-region)
+                           (bound-and-true-p pdf-view-selection-style)))
 
 (defun multi-region--pdf-show (buffer window)
-  "Draw the active PDF regions of BUFFER in WINDOW."
+  "Draw the active PDF regions of BUFFER in WINDOW.
+Do nothing if WINDOW already shows them."
   (when (and (buffer-live-p buffer)
              (window-live-p window)
              (eq (window-buffer window) buffer))
     (with-selected-window window
-      (when pdf-view-active-region
-        (pdf-view-display-region)))))
+      (when (and pdf-view-active-region
+                 (not (equal multi-region--pdf-shown
+                             (cons window (image-mode-window-get 'image window)))))
+        (multi-region--pdf-draw)
+        (setq multi-region--pdf-shown
+              (cons window (image-mode-window-get 'image window)))))))
+
+(defun multi-region--pdf-show-now ()
+  "Draw restored PDF regions once the page-turning command is done.
+This runs on `post-command-hook', before the screen is updated, so the
+page appears with its highlights instead of blinking without them."
+  (remove-hook 'post-command-hook #'multi-region--pdf-show-now t)
+  (multi-region--pdf-show (current-buffer) (car multi-region--pdf-shown)))
 
 (defun multi-region--pdf-restore ()
   "Reselect the regions remembered for the page just arrived at.
@@ -329,8 +453,12 @@ This goes on `pdf-view-after-change-page-hook'."
       (let (mark-ring)
         (push-mark-command nil t))
       (setq deactivate-mark nil)
-      ;; Page-turning commands redraw the plain page once more after
-      ;; this hook has run, so draw the highlight when Emacs is idle.
+      ;; Page-turning commands draw the plain page once more after this
+      ;; hook has run, so draw the highlight when the command is done.
+      ;; Some draw it later still, when Emacs is idle; the timer covers
+      ;; them, and does nothing if the highlight is still there.
+      (setq multi-region--pdf-shown (list (selected-window)))
+      (add-hook 'post-command-hook #'multi-region--pdf-show-now nil t)
       (when (timerp multi-region--pdf-timer)
         (cancel-timer multi-region--pdf-timer))
       (setq multi-region--pdf-timer
@@ -344,9 +472,7 @@ plist (:page PAGE :edges EDGES :text TEXT)."
   (let* ((edges (multi-region--pdf-edges))
          ;; The region knows its page in current pdf-tools.
          (page (and (or edges multi-region--pdf-regions)
-                    (if (numberp (car-safe (bound-and-true-p pdf-view-active-region)))
-                        (car pdf-view-active-region)
-                      (multi-region--pdf-page))))
+                    (multi-region--pdf-live-page)))
          (pages (and page
                      (cons (cons page edges)
                            (seq-remove (lambda (entry) (eq (car entry) page))
@@ -375,7 +501,7 @@ plist (:page PAGE :edges EDGES :text TEXT)."
 (defun multi-region--count ()
   "Return the number of selections in the current buffer."
   (if (multi-region--pdf-p)
-      (let ((page (multi-region--pdf-page))
+      (let ((page (multi-region--pdf-live-page))
             (n (length (multi-region--pdf-edges))))
         (dolist (entry multi-region--pdf-regions n)
           (unless (eq (car entry) page)
@@ -490,8 +616,8 @@ In a PDF this is the last region added on the page on display."
          ((null edges)
           (user-error "No selection on this page"))
          ((cdr edges)
-          (multi-region--pdf-set (multi-region--pdf-page) (butlast edges))
-          (pdf-view-display-region)
+          (multi-region--pdf-set (multi-region--pdf-live-page) (butlast edges))
+          (multi-region--pdf-draw)
           (force-mode-line-update))
          (t
           (pdf-view-deactivate-region))))
@@ -681,10 +807,10 @@ dragging deselects the selection under the pointer.  If the region
 is active when the drag starts, it is kept as a selection too.
 
 In a PDF buffer this adds a region to the page, as
-`pdf-view-mouse-extend-region' does."
+`pdf-view-mouse-extend-region' is meant to do."
   (interactive "@e")
   (if (multi-region--pdf-p)
-      (pdf-view-mouse-extend-region event)
+      (multi-region--pdf-mouse-drag event)
     (multi-region--absorb-region)
     (let* ((posn (event-start event))
            (window (posn-window posn))
@@ -714,6 +840,14 @@ In a PDF buffer this adds a region to the page, as
 (defvar multi-region-mode-map
   (let ((map (make-sparse-keymap)))
     (define-key map [C-down-mouse-1] #'multi-region-mouse-drag)
+    ;; In PDFs only: a plain click there would deselect everything.
+    (define-key map [down-mouse-1]
+      `(menu-item "" multi-region-pdf-mouse-set-region
+                  :filter ,(lambda (cmd) (and (multi-region--pdf-p) cmd))))
+    ;; In PDFs only: C-g deselects on all pages, not just this one.
+    (define-key map [remap keyboard-quit]
+      `(menu-item "" multi-region-pdf-keyboard-quit
+                  :filter ,(lambda (cmd) (and (multi-region--pdf-p) cmd))))
     (define-key map (kbd "C-c m") multi-region-command-map)
     (define-key map [remap kill-ring-save] #'multi-region-kill-ring-save)
     (define-key map [remap kill-region] #'multi-region-kill-region)
