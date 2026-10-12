@@ -1,6 +1,6 @@
 ;;; multi-region.el --- Select several separate regions at once  -*- lexical-binding: t; -*-
 
-;; Version: 0.2.1
+;; Version: 0.2.2
 ;; Package-Requires: ((emacs "27.1"))
 ;; Keywords: convenience, mouse
 
@@ -62,7 +62,10 @@
 ;;   forgets the regions already on a page when C-drag adds one; with
 ;;   this mode on, C-drag keeps them.  A click without a drag, with or
 ;;   without Control, keeps the selections too; a plain drag starts
-;;   over, as it does in pdf-tools.  C-g deselects on all pages.
+;;   over, as it does in pdf-tools.
+;;
+;; In PDF and EPUB buffers C-g deselects everything, on all pages or
+;; chapters.
 ;;
 ;; Other packages can read the selections with `multi-region-selections'.
 ;;
@@ -392,12 +395,15 @@ nothing leaves them selected, as a click does in a text buffer."
       (setq deactivate-mark nil)))
     (force-mode-line-update)))
 
-(defun multi-region-pdf-keyboard-quit ()
-  "Deselect everything in this PDF, on all pages, then quit.
-\\[keyboard-quit] runs this in PDF buffers."
+(defun multi-region-keyboard-quit ()
+  "Deselect everything, on all PDF pages or EPUB chapters, then quit.
+\\[keyboard-quit] runs this in PDF and EPUB buffers."
   (interactive)
   (multi-region-clear)
   (keyboard-quit))
+
+(define-obsolete-function-alias 'multi-region-pdf-keyboard-quit
+  #'multi-region-keyboard-quit "0.2.2")
 
 (defun multi-region--pdf-set (page edges)
   "Make EDGES, a list of edges on PAGE, the active PDF region."
@@ -844,10 +850,12 @@ In a PDF buffer this adds a region to the page, as
     (define-key map [down-mouse-1]
       `(menu-item "" multi-region-pdf-mouse-set-region
                   :filter ,(lambda (cmd) (and (multi-region--pdf-p) cmd))))
-    ;; In PDFs only: C-g deselects on all pages, not just this one.
+    ;; In PDFs and EPUBs only: C-g deselects on all pages or chapters.
     (define-key map [remap keyboard-quit]
-      `(menu-item "" multi-region-pdf-keyboard-quit
-                  :filter ,(lambda (cmd) (and (multi-region--pdf-p) cmd))))
+      `(menu-item "" multi-region-keyboard-quit
+                  :filter ,(lambda (cmd)
+                             (and (or (multi-region--pdf-p) (multi-region--nov-p))
+                                  cmd))))
     (define-key map (kbd "C-c m") multi-region-command-map)
     (define-key map [remap kill-ring-save] #'multi-region-kill-ring-save)
     (define-key map [remap kill-region] #'multi-region-kill-region)
