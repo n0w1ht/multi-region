@@ -51,6 +51,54 @@
         (should-not (text-properties-at 0 (plist-get (car (multi-region-selections))
                                                      :text)))))))
 
+;;;; Bringing back cleared selections
+
+(ert-deftest multi-region-test-restore-in-text ()
+  (with-temp-buffer
+    (insert "I love ClaudeAI very much")
+    (multi-region-mode 1)
+    (should-error (multi-region-restore) :type 'user-error)
+    (multi-region--add 3 7)              ; "love"
+    (multi-region--add 22 26)            ; "much"
+    (multi-region-clear)
+    (should (= (multi-region--count) 0))
+    ;; Edits before a selection move it, as markers do.
+    (goto-char (point-min))
+    (insert ">> ")
+    (multi-region--add 11 19)            ; "ClaudeAI", selected since
+    (multi-region-restore)
+    (should (equal (mapcar (lambda (s) (plist-get s :text)) (multi-region-selections))
+                   '("love" "ClaudeAI" "much")))
+    ;; Only once.
+    (should-error (multi-region-restore) :type 'user-error)
+    ;; Clearing with nothing selected keeps the last snapshot.
+    (multi-region-clear)
+    (multi-region-clear)
+    (multi-region-restore)
+    (should (= (multi-region--count) 3))
+    ;; Copying clears too, and can be undone the same way.
+    (let ((kill-ring nil))
+      (multi-region-copy))
+    (should (= (multi-region--count) 0))
+    (multi-region-restore)
+    (should (= (multi-region--count) 3))))
+
+(ert-deftest multi-region-test-restore-in-epub ()
+  (with-temp-buffer
+    (insert "Chapter two text with a selection.")
+    (multi-region-mode 1)
+    (defvar nov-documents-index)
+    (let ((nov-documents-index 2))
+      (cl-letf (((symbol-function 'multi-region--nov-p) (lambda () t)))
+        (multi-region--add 25 34)
+        (setq multi-region--nov-stash (list (cons 1 (list (list 5 9 "kept")))))
+        (multi-region-clear)
+        (should (= (multi-region--count) 0))
+        (multi-region-restore)
+        (should (equal (multi-region-selections)
+                       '((:beg 5 :end 9 :text "kept" :chapter 1)
+                         (:beg 25 :end 34 :text "selection" :chapter 2))))))))
+
 ;;;; PDF buffers, with both forms of `pdf-view-active-region'
 
 (defvar pdf-view-active-region nil)
@@ -222,7 +270,24 @@ imitates a click without a drag."
     (multi-region-mode 1)
     (should (eq (key-binding (kbd "C-g")) 'keyboard-quit))
     (cl-letf (((symbol-function 'multi-region--pdf-p) (lambda () t)))
-      (should (eq (key-binding (kbd "C-g")) 'multi-region-pdf-keyboard-quit)))))
+      (should (eq (key-binding (kbd "C-g")) 'multi-region-keyboard-quit)))))
+
+(ert-deftest multi-region-test-epub-quit-clears-all-chapters ()
+  (with-temp-buffer
+    (insert "Chapter two text with a selection.")
+    (multi-region-mode 1)
+    (defvar nov-documents-index)
+    (let ((nov-documents-index 2))
+      (cl-letf (((symbol-function 'multi-region--nov-p) (lambda () t)))
+        (should (eq (key-binding (kbd "C-g")) 'multi-region-keyboard-quit))
+        (multi-region--add 25 34)
+        (setq multi-region--nov-stash (list (cons 1 (list (list 5 9 "kept")))))
+        (should (= (multi-region--count) 2))
+        (let (quit)
+          (cl-letf (((symbol-function 'keyboard-quit) (lambda () (setq quit t))))
+            (multi-region-keyboard-quit))
+          (should quit))
+        (should (= (multi-region--count) 0))))))
 
 (ert-deftest multi-region-test-pdf-quit-clears-all-pages ()
   (multi-region-test--with-pdf t
@@ -232,11 +297,32 @@ imitates a click without a drag."
     (should (= (multi-region--count) 2))
     (let (quit)
       (cl-letf (((symbol-function 'keyboard-quit) (lambda () (setq quit t))))
-        (multi-region-pdf-keyboard-quit))
+        (multi-region-keyboard-quit))
       (should quit))
     (should (= (multi-region--count) 0))
     (multi-region-test--turn-to 1)
     (should-not pdf-view-active-region)))
+
+(dolist (paged '(t nil))
+  (eval
+   `(ert-deftest ,(intern (format "multi-region-test-pdf-restore-%s"
+                                  (if paged "current-pdf-tools" "older-pdf-tools")))
+        ()
+      (multi-region-test--with-pdf ,paged
+        (let ((transient-mark-mode t))
+          (multi-region-test--select ,paged 1 '(0.1 0.1 0.5 0.2))
+          (multi-region-test--turn-to 3)
+          (multi-region-test--select ,paged 3 '(0.2 0.2 0.6 0.3))
+          (multi-region-clear)
+          (should (= (multi-region--count) 0))
+          ;; A selection made since on page 3 is kept.
+          (multi-region-test--select ,paged 3 '(0.3 0.5 0.6 0.6))
+          (multi-region-restore)
+          (should (equal (mapcar (lambda (s) (list (plist-get s :page) (plist-get s :edges)))
+                                 (multi-region-selections))
+                         '((1 (0.1 0.1 0.5 0.2))
+                           (3 (0.3 0.5 0.6 0.6))
+                           (3 (0.2 0.2 0.6 0.3))))))))))
 
 (ert-deftest multi-region-test-pdf-format-detection ()
   ;; With nothing selected yet, the form is read from pdf-tools' doc string.

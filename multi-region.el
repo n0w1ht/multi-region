@@ -1,6 +1,6 @@
 ;;; multi-region.el --- Select several separate regions at once  -*- lexical-binding: t; -*-
 
-;; Version: 0.2.1
+;; Version: 0.3.0
 ;; Package-Requires: ((emacs "27.1"))
 ;; Keywords: convenience, mouse
 
@@ -41,12 +41,16 @@
 ;;   C-c m n/p   jump to the next/previous selection
 ;;   C-c m u     deselect the most recent selection
 ;;   C-c m c     deselect everything
+;;   C-c m /     bring back what was last deselected all at once
 ;;
 ;; M-w and C-w only change behavior while selections exist.  Copied
 ;; selections are joined with `multi-region-separator'.
 ;;
 ;; Works in any text buffer (text, Org, Markdown, code, ...) and in
-;; read-only ones.  Two viewers get extra support:
+;; read-only ones such as eww.  On a link in eww or an EPUB, C-drag
+;; selects; a C-click that selects nothing still opens the link in a
+;; new window, as it does without this mode.  Two viewers get extra
+;; support:
 ;;
 ;; - nov.el (EPUB): selections are remembered per chapter and put back
 ;;   when you return, and copying collects them from all chapters.
@@ -62,7 +66,10 @@
 ;;   forgets the regions already on a page when C-drag adds one; with
 ;;   this mode on, C-drag keeps them.  A click without a drag, with or
 ;;   without Control, keeps the selections too; a plain drag starts
-;;   over, as it does in pdf-tools.  C-g deselects on all pages.
+;;   over, as it does in pdf-tools.
+;;
+;; In PDF and EPUB buffers C-g deselects everything, on all pages or
+;; chapters.
 ;;
 ;; Other packages can read the selections with `multi-region-selections'.
 ;;
@@ -392,12 +399,15 @@ nothing leaves them selected, as a click does in a text buffer."
       (setq deactivate-mark nil)))
     (force-mode-line-update)))
 
-(defun multi-region-pdf-keyboard-quit ()
-  "Deselect everything in this PDF, on all pages, then quit.
-\\[keyboard-quit] runs this in PDF buffers."
+(defun multi-region-keyboard-quit ()
+  "Deselect everything, on all PDF pages or EPUB chapters, then quit.
+\\[keyboard-quit] runs this in PDF and EPUB buffers."
   (interactive)
   (multi-region-clear)
   (keyboard-quit))
+
+(define-obsolete-function-alias 'multi-region-pdf-keyboard-quit
+  #'multi-region-keyboard-quit "0.2.2")
 
 (defun multi-region--pdf-set (page edges)
   "Make EDGES, a list of edges on PAGE, the active PDF region."
@@ -599,12 +609,92 @@ select the `multi-region-thing' at point, a word by default."
           (user-error "Nothing to select here"))
         (multi-region--add (car bounds) (cdr bounds)))))))
 
+(defvar-local multi-region--cleared nil
+  "What `multi-region-clear' last deselected, for `multi-region-restore'.
+In a text buffer a list of (BEG . END) marker pairs, with the stashed
+EPUB chapters as (:nov STASH); in a PDF (:pdf REGIONS), REGIONS being
+an alist of (PAGE . EDGES) that includes the page on display.")
+
+(defun multi-region--snapshot ()
+  "Return the selections of this buffer in the form of `multi-region--cleared'."
+  (cond
+   ((multi-region--pdf-p)
+    (let ((page (multi-region--pdf-live-page))
+          (edges (multi-region--pdf-edges)))
+      (list :pdf (append (and edges (list (cons page (copy-sequence edges))))
+                         (seq-remove (lambda (entry) (eql (car entry) page))
+                                     (copy-tree multi-region--pdf-regions))))))
+   (t
+    (let ((nov (multi-region--nov-p)))
+      (if nov
+          ;; Chapters are rendered anew, so keep text, not markers.
+          (let ((stash (copy-tree multi-region--nov-stash)))
+            (dolist (ov (reverse (multi-region--sorted)))
+              (let ((beg (overlay-start ov)) (end (overlay-end ov)))
+                (push (list beg end (buffer-substring-no-properties beg end))
+                      (alist-get nov-documents-index stash))))
+            (list :nov stash))
+        (mapcar (lambda (ov)
+                  (cons (copy-marker (overlay-start ov))
+                        (copy-marker (overlay-end ov))))
+                (multi-region--sorted)))))))
+
 (defun multi-region-clear ()
-  "Deselect everything in the current buffer."
+  "Deselect everything in the current buffer.
+\\[multi-region-restore] brings it back."
   (interactive)
+  (when (multi-region--any-p)
+    (setq multi-region--cleared (multi-region--snapshot)))
   (multi-region--reset)
   (when (and (multi-region--pdf-p) (bound-and-true-p pdf-view-active-region))
     (pdf-view-deactivate-region)))
+
+(defun multi-region-restore ()
+  "Select again what was deselected all at once, last time.
+That is everything that \\[multi-region-clear], \\[keyboard-quit] in a
+PDF or EPUB, or copying cleared.  Selections made since are kept."
+  (interactive)
+  (let ((saved multi-region--cleared)
+        (before (multi-region--count)))
+    (unless saved
+      (user-error "Nothing to bring back"))
+    (cond
+     ((eq (car saved) :pdf)
+      (unless (multi-region--pdf-p)
+        (user-error "Nothing to bring back"))
+      (let ((page (multi-region--pdf-live-page)))
+        (dolist (entry (cadr saved))
+          (let* ((live (if (eql (car entry) page)
+                           (multi-region--pdf-edges)
+                         (cdr (assq (car entry) multi-region--pdf-regions))))
+                 (edges (append live (seq-remove (lambda (e) (member e live))
+                                                 (cdr entry)))))
+            (if (eql (car entry) page)
+                (multi-region--pdf-set page edges)
+              (multi-region--pdf-stash (car entry) edges))))
+        (when (multi-region--pdf-edges)
+          (let (mark-ring)
+            (push-mark-command nil t))
+          (setq deactivate-mark nil)
+          (multi-region--pdf-draw))))
+     ((eq (car saved) :nov)
+      (unless (multi-region--nov-p)
+        (user-error "Nothing to bring back"))
+      (dolist (chapter (cadr saved))
+        (setf (alist-get (car chapter) multi-region--nov-stash)
+              (append (alist-get (car chapter) multi-region--nov-stash)
+                      (cdr chapter))))
+      ;; Selects the entries of the chapter on display.
+      (multi-region--nov-restore))
+     (t
+      (dolist (pair saved)
+        (when (eq (marker-buffer (car pair)) (current-buffer))
+          (multi-region--add (car pair) (cdr pair))))))
+    (setq multi-region--cleared nil)
+    (force-mode-line-update)
+    (message "Brought back %d selection%s"
+             (- (multi-region--count) before)
+             (if (= (- (multi-region--count) before) 1) "" "s"))))
 
 (defun multi-region-remove-last ()
   "Deselect the most recently added selection.
@@ -755,7 +845,8 @@ MODE is 0 to select by character, 1 by word and 2 by line."
   "Follow a mouse drag in WINDOW that began at position ORIGIN.
 Select the text dragged over; MODE is as in
 `multi-region--mouse-range'.  A click that covers no text deselects
-the selection under it instead."
+the selection under it instead.  Return nil if the click did
+neither."
   (let* ((range (multi-region--mouse-range origin origin mode))
          (ov (make-overlay (car range) (nth 1 range)))
          (edges (window-edges window))
@@ -793,11 +884,26 @@ the selection under it instead."
           (let ((beg (overlay-start ov))
                 (end (overlay-end ov)))
             (if (< beg end)
-                (multi-region--add beg end)
+                (progn (multi-region--add beg end) t)
               (let ((old (multi-region--at origin)))
                 (when old
-                  (multi-region--delete old))))))
+                  (multi-region--delete old)
+                  t)))))
       (delete-overlay ov))))
+
+(defun multi-region--text-binding (event)
+  "Return what EVENT is bound to in the text it was made on, if anything.
+That is a binding made by a `keymap' text property or the major mode,
+such as eww's C-click on a link, which opens it in a new window."
+  (let* ((key (vector (event-basic-type event)))
+         (key (vector (event-convert-list
+                       (append (event-modifiers event) (list (aref key 0))))))
+         (command (let ((multi-region-mode nil))
+                    (key-binding key t nil (event-start event)))))
+    (and command
+         (not (eq command (global-key-binding key)))
+         (not (eq command 'multi-region-mouse-drag))
+         command)))
 
 (defun multi-region-mouse-drag (event)
   "Add the text dragged over with the mouse to the selections.
@@ -818,8 +924,13 @@ In a PDF buffer this adds a region to the page, as
       (when (and (windowp window)
                  (null (posn-area posn))
                  (integerp origin))
-        (multi-region--track-drag window origin
-                                  (1- (event-click-count event)))))))
+        (unless (multi-region--track-drag window origin
+                                          (1- (event-click-count event)))
+          ;; A click that selected nothing does what it does without
+          ;; this mode, such as opening a link in eww or an EPUB.
+          (let ((command (multi-region--text-binding event)))
+            (when command
+              (funcall command event))))))))
 
 ;;;; Modes
 
@@ -834,20 +945,26 @@ In a PDF buffer this adds a region to the page, as
     (define-key map "p" #'multi-region-previous)
     (define-key map "u" #'multi-region-remove-last)
     (define-key map "c" #'multi-region-clear)
+    (define-key map "/" #'multi-region-restore)
     map)
   "Keymap of `multi-region-mode' commands, bound to a prefix key.")
 
 (defvar multi-region-mode-map
   (let ((map (make-sparse-keymap)))
     (define-key map [C-down-mouse-1] #'multi-region-mouse-drag)
+    ;; Links in eww and EPUBs bind C-down-mouse-1 themselves.
+    (define-key map [remap shr-mouse-browse-url-new-window]
+      #'multi-region-mouse-drag)
     ;; In PDFs only: a plain click there would deselect everything.
     (define-key map [down-mouse-1]
       `(menu-item "" multi-region-pdf-mouse-set-region
                   :filter ,(lambda (cmd) (and (multi-region--pdf-p) cmd))))
-    ;; In PDFs only: C-g deselects on all pages, not just this one.
+    ;; In PDFs and EPUBs only: C-g deselects on all pages or chapters.
     (define-key map [remap keyboard-quit]
-      `(menu-item "" multi-region-pdf-keyboard-quit
-                  :filter ,(lambda (cmd) (and (multi-region--pdf-p) cmd))))
+      `(menu-item "" multi-region-keyboard-quit
+                  :filter ,(lambda (cmd)
+                             (and (or (multi-region--pdf-p) (multi-region--nov-p))
+                                  cmd))))
     (define-key map (kbd "C-c m") multi-region-command-map)
     (define-key map [remap kill-ring-save] #'multi-region-kill-ring-save)
     (define-key map [remap kill-region] #'multi-region-kill-region)
