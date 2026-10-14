@@ -120,6 +120,9 @@ PAGED non-nil imitates current pdf-tools, where the region is
                  ((symbol-function 'pdf-info-gettext)
                   (lambda (page edges &rest _) (format "p%d:%S" page (car edges))))
                  ((symbol-function 'pdf-view-display-region) #'ignore)
+                 ((symbol-function 'pdf-view-redisplay) #'ignore)
+                 ((symbol-function 'pdf-util-face-colors)
+                  (lambda (&rest _) '("fg" . "bg")))
                  ((symbol-function 'pdf-view-deactivate-region)
                   (lambda () (setq pdf-view-active-region nil)))
                  ((get 'pdf-view-active-region 'variable-documentation) doc))
@@ -336,6 +339,250 @@ imitates a click without a drag."
     (should-not (multi-region--pdf-paged-p))
     (multi-region--pdf-set 4 '((0 0 1 1)))
     (should (equal pdf-view-active-region '((0 0 1 1))))))
+
+;;;; Pictures
+
+(defun multi-region-test--picture (file)
+  "Return an image spec for FILE, as `create-image' would make it."
+  (list 'image :type 'png :file file))
+
+(ert-deftest multi-region-test-picture-in-selection ()
+  (with-temp-buffer
+    (insert "Before * after.")
+    (let ((image (multi-region-test--picture "/tmp/fig.png")))
+      (put-text-property 8 9 'display image))
+    (multi-region-mode 1)
+    (multi-region--add 1 16)
+    (should (equal (multi-region-selections)
+                   '((:beg 1 :end 16 :text "Before * after."
+                      :images ((:beg 8 :end 9 :file "/tmp/fig.png"))))))
+    ;; Text without a picture reports none.
+    (multi-region-clear)
+    (multi-region--add 1 7)
+    (should (equal (multi-region-selections) '((:beg 1 :end 7 :text "Before"))))
+    ;; Text that stops just before the picture leaves it out.
+    (multi-region-clear)
+    (multi-region--add 3 8)
+    (should (equal (multi-region-selections) '((:beg 3 :end 8 :text "fore "))))))
+
+(ert-deftest multi-region-test-sliced-picture ()
+  ;; eww cuts big pictures into slices, one character each.
+  (with-temp-buffer
+    ;; Three rows of two slices.
+    (insert "Text **\n**\n** text")
+    (let ((image (list 'image :type 'png :data "PNGDATA")))
+      (dolist (pos '(6 7 9 10 12 13))
+        (put-text-property pos (1+ pos) 'display
+                           (list (list 'slice 0 pos 1.0 10) image))))
+    (multi-region-mode 1)
+    ;; Selecting part of it selects all of it.
+    (multi-region--add 8 10)
+    (should (equal (multi-region-selections)
+                   '((:beg 6 :end 14 :text "**\n**\n**"
+                      :images ((:beg 6 :end 14 :data "PNGDATA" :type png))))))
+    ;; C-c m SPC on a picture deselects it, and selects it again.
+    (goto-char 9)
+    (multi-region-toggle)
+    (should (= (multi-region--count) 0))
+    (multi-region-toggle)
+    (should (equal (mapcar (lambda (s) (list (plist-get s :beg) (plist-get s :end)))
+                           (multi-region-selections))
+                   '((6 14))))))
+
+(ert-deftest multi-region-test-picture-overlay ()
+  ;; Org and Markdown show inline images with overlays.
+  (with-temp-buffer
+    (insert "See [[file:/tmp/a.png]] here")
+    (let ((ov (make-overlay 5 24)))
+      (overlay-put ov 'display (multi-region-test--picture "/tmp/a.png")))
+    (multi-region-mode 1)
+    (multi-region--add 1 29)
+    (should (equal (plist-get (car (multi-region-selections)) :images)
+                   '((:beg 5 :end 24 :file "/tmp/a.png"))))
+    ;; The band drawn around a selected picture leaves its source alone.
+    (multi-region-clear)
+    (cl-letf (((symbol-function 'display-images-p) (lambda (&rest _) t)))
+      (multi-region--add 1 29)
+      (should (= (length multi-region--decor) 1))
+      (let ((shown (overlay-get (car multi-region--decor) 'display)))
+        (should (equal (plist-get (cdr shown) :margin) multi-region-image-margin))
+        (should (equal (plist-get (cdr shown) :file) "/tmp/a.png")))
+      (should (equal (plist-get (car (multi-region-selections)) :images)
+                     '((:beg 5 :end 24 :file "/tmp/a.png"))))
+      (multi-region-clear)
+      (should-not multi-region--decor)
+      (should-not (seq-filter (lambda (ov) (overlay-get ov 'multi-region-decor))
+                              (overlays-in 1 29))))))
+
+(ert-deftest multi-region-test-picture-links ()
+  ;; Picture links whose image is not displayed count too, if the file
+  ;; is there.
+  (let* ((dir (make-temp-file "mr" t))
+         (default-directory (file-name-as-directory dir)))
+    (unwind-protect
+        (progn
+          (write-region "" nil (expand-file-name "fig.png" dir))
+          (with-temp-buffer
+            (insert "A [[file:fig.png]] and [[./gone.png]] and [[fig.png][caption]].")
+            (setq major-mode 'org-mode)
+            (multi-region-mode 1)
+            (multi-region--add 1 (point-max))
+            (should (equal (mapcar (lambda (i) (plist-get i :file))
+                                   (plist-get (car (multi-region-selections)) :images))
+                           (list (expand-file-name "fig.png" dir)
+                                 (expand-file-name "fig.png" dir)))))
+          (with-temp-buffer
+            (insert "A ![alt](fig.png \"title\") b ![x](https://e.org/x.png)")
+            (setq major-mode 'markdown-mode)
+            (multi-region-mode 1)
+            (multi-region--add 1 (point-max))
+            (should (equal (plist-get (car (multi-region-selections)) :images)
+                           (list (list :beg 3 :end 26
+                                       :file (expand-file-name "fig.png" dir))))))
+          ;; Elsewhere such text is just text.
+          (with-temp-buffer
+            (insert "A ![alt](fig.png)")
+            (multi-region-mode 1)
+            (multi-region--add 1 (point-max))
+            (should-not (plist-get (car (multi-region-selections)) :images))))
+      (delete-directory dir t))))
+
+(ert-deftest multi-region-test-picture-in-epub-stash ()
+  (with-temp-buffer
+    (insert "Chapter * text.")
+    (put-text-property 9 10 'display (multi-region-test--picture "/tmp/e.png"))
+    (multi-region-mode 1)
+    (defvar nov-documents-index)
+    (let ((nov-documents-index 2))
+      (cl-letf (((symbol-function 'multi-region--nov-p) (lambda () t)))
+        (multi-region--add 1 16)
+        ;; Leaving the chapter keeps the picture with the selection.
+        (multi-region--nov-save)
+        (setq nov-documents-index 3)
+        (should (equal (multi-region-selections)
+                       '((:beg 1 :end 16 :text "Chapter * text." :chapter 2
+                          :images ((:beg 9 :end 10 :file "/tmp/e.png"))))))))))
+
+(ert-deftest multi-region-test-click-selects-picture ()
+  (with-temp-buffer
+    (insert "Text * text")
+    (put-text-property 6 7 'display (multi-region-test--picture "/tmp/c.png"))
+    (multi-region-mode 1)
+    ;; A click on a picture, with no drag: the button is released at once.
+    (cl-letf (((symbol-function 'read-event) (lambda (&rest _) '(C-mouse-1)))
+              ((symbol-function 'window-edges) (lambda (&rest _) '(0 0 80 25))))
+      (should (multi-region--track-drag (selected-window) 6 0))
+      (should (equal (mapcar (lambda (s) (list (plist-get s :beg) (plist-get s :end)))
+                             (multi-region-selections))
+                     '((6 7))))
+      ;; A second click deselects it.
+      (should (multi-region--track-drag (selected-window) 6 0))
+      (should (= (multi-region--count) 0))
+      ;; A click on plain text does neither.
+      (should-not (multi-region--track-drag (selected-window) 2 0)))))
+
+(defun multi-region-test--fake-rectangle (paged rect)
+  "Return an imitation of `pdf-view-mouse-set-region-rectangle' making RECT.
+It deselects first, as pdf-tools does.  RECT nil imitates a click."
+  (lambda (_event)
+    (pdf-view-deactivate-region)
+    (setq pdf-view--have-rectangle-region t)
+    (when paged
+      (setq pdf-view-active-region (list multi-region-test--page)))
+    (when rect
+      (pdf-view-display-region
+       (if paged (list multi-region-test--page rect) (list rect)) t)
+      (if paged
+          (setcdr pdf-view-active-region (list rect))
+        (setq pdf-view-active-region (list rect))))))
+
+(dolist (paged '(t nil))
+  (eval
+   `(ert-deftest ,(intern (format "multi-region-test-pdf-picture-%s"
+                                  (if paged "current-pdf-tools" "older-pdf-tools")))
+        ()
+      (multi-region-test--with-pdf ,paged
+        (defvar pdf-view--have-rectangle-region)
+        (let ((transient-mark-mode t)
+              (pdf-view--have-rectangle-region nil)
+              drawn)
+          (cl-letf (((symbol-function 'pdf-view-display-region)
+                     (lambda (&optional region &rest _)
+                       (push (funcall (symbol-function
+                                       'pdf-info-renderpage-text-regions)
+                                      (if ,paged (car region) multi-region-test--page)
+                                      100)
+                             drawn)))
+                    ((symbol-function 'pdf-info-renderpage)
+                     (lambda (_page _width _file &rest commands) commands))
+                    ((symbol-function 'multi-region--pdf-event-edges)
+                     (lambda (_) '(0.3 0.6 0.3 0.6))))
+            (multi-region-test--select ,paged 1 '(0.1 0.1 0.5 0.2) '(0.1 0.8 0.5 0.9))
+            (cl-letf (((symbol-function 'pdf-view-mouse-set-region-rectangle)
+                       (multi-region-test--fake-rectangle ,paged '(0.2 0.5 0.7 0.7))))
+              (multi-region-pdf-mouse-rectangle nil))
+            ;; The text stays selected, and the area is drawn next to it.
+            (should (equal (multi-region--pdf-edges)
+                           '((0.1 0.1 0.5 0.2) (0.1 0.8 0.5 0.9))))
+            (should-not pdf-view--have-rectangle-region)
+            (should (equal (plist-get (car drawn) :highlight-text) '(0.1 0.1 0.5 0.2)))
+            (should (equal (plist-get (car drawn) :highlight-region) '(0.2 0.5 0.7 0.7)))
+            (should (= (multi-region--count) 3))
+            ;; It comes between the text above and below it.
+            (should (equal (multi-region-selections)
+                           '((:page 1 :edges (0.1 0.1 0.5 0.2) :text "p1:0.1")
+                             (:page 1 :edges (0.2 0.5 0.7 0.7) :text "" :figure t)
+                             (:page 1 :edges (0.1 0.8 0.5 0.9) :text "p1:0.1"))))
+            ;; Copying takes the text only.
+            (let ((kill-ring nil) (multi-region-keep-after-copy t))
+              (multi-region-copy " | ")
+              (should (equal (car kill-ring) "p1:0.1 | p1:0.1")))
+            ;; Picture areas stay with their page.
+            (multi-region-test--turn-to 2)
+            (should (= (multi-region--count) 3))
+            (multi-region-test--turn-to 1)
+            ;; Undo deselects the area added last, then text.
+            (multi-region-remove-last)
+            (should (= (multi-region--count) 2))
+            (should-not multi-region--pdf-rects)
+            ;; Clearing and bringing back includes picture areas.
+            (cl-letf (((symbol-function 'pdf-view-mouse-set-region-rectangle)
+                       (multi-region-test--fake-rectangle ,paged '(0.2 0.5 0.7 0.7))))
+              (multi-region-pdf-mouse-rectangle nil))
+            (multi-region-clear)
+            (should (= (multi-region--count) 0))
+            (multi-region-restore)
+            (should (= (multi-region--count) 3))
+            ;; A click inside a picture area deselects it.
+            (cl-letf (((symbol-function 'pdf-view-mouse-set-region-rectangle)
+                       (multi-region-test--fake-rectangle ,paged nil)))
+              (multi-region-pdf-mouse-rectangle nil))
+            (should (= (multi-region--count) 2))
+            (should-not multi-region--pdf-rects)))))))
+
+(ert-deftest multi-region-test-pdf-picture-only ()
+  ;; A picture area with no text on the page.
+  (multi-region-test--with-pdf t
+    (defvar pdf-view--have-rectangle-region)
+    (let ((pdf-view--have-rectangle-region nil))
+      (cl-letf (((symbol-function 'pdf-info-renderpage) #'ignore)
+                ((symbol-function 'pdf-view-mouse-set-region-rectangle)
+                 (multi-region-test--fake-rectangle t '(0.2 0.5 0.7 0.7))))
+        (multi-region-pdf-mouse-rectangle nil))
+      (should-not pdf-view-active-region)
+      (should (equal (multi-region-selections)
+                     '((:page 1 :edges (0.2 0.5 0.7 0.7) :text "" :figure t))))
+      (should (= (multi-region--count) 1))
+      (should (equal (multi-region--lighter) " MR[1]"))
+      (multi-region-remove-last)
+      (should (= (multi-region--count) 0)))))
+
+(ert-deftest multi-region-test-pdf-picture-binding ()
+  (with-temp-buffer
+    (multi-region-mode 1)
+    (should-not (eq (key-binding [M-down-mouse-1]) 'multi-region-pdf-mouse-rectangle))
+    (cl-letf (((symbol-function 'multi-region--pdf-p) (lambda () t)))
+      (should (eq (key-binding [M-down-mouse-1]) 'multi-region-pdf-mouse-rectangle)))))
 
 (provide 'multi-region-test)
 ;;; multi-region-test.el ends here
