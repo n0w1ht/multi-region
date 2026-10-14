@@ -11,6 +11,11 @@ It works in plain text, Org, Markdown and code buffers, in read-only buffers
 such as eww, in EPUB books opened with [nov.el](https://depp.brause.cc/nov.el/),
 and in PDFs opened with [pdf-tools](https://github.com/vedang/pdf-tools).
 
+Pictures can be selected along with the text: drag across a picture in eww,
+an EPUB, Org or Markdown, or mark a figure in a PDF with `M-drag`. Other
+packages, such as [readq](https://github.com/n0w1ht/readq), get the text and
+the pictures together, so one extract can hold both.
+
 ## Installation
 
 multi-region is a single file, `multi-region.el`, and needs Emacs 27.1 or
@@ -49,7 +54,9 @@ pieces are selected.
 | `C-drag`         | Add the dragged text to the selections         |
 | `C-double-click` | Add the word under the pointer                 |
 | `C-triple-click` | Add the line under the pointer                 |
-| `C-click`        | Deselect the selection under the pointer       |
+| `C-click`        | Deselect the selection under the pointer, or select the picture under it |
+| `M-drag`         | In a PDF: select a picture area (a figure)     |
+| `M-click`        | In a PDF: deselect the picture area under it   |
 
 A region made the normal way (a plain drag, or `C-SPC` and motion) becomes a
 selection as soon as you start a `C-drag`, so "drag, then C-drag, then
@@ -61,7 +68,7 @@ All commands are under the `C-c m` prefix.
 
 | Key           | Command                       | What it does                                                         |
 |---------------|-------------------------------|----------------------------------------------------------------------|
-| `C-c m SPC`   | `multi-region-toggle`         | Select the active region; without one, select the word at point, or deselect the selection point is in |
+| `C-c m SPC`   | `multi-region-toggle`         | Select the active region; without one, select the picture or word at point, or deselect the selection point is in |
 | `C-c m w`     | `multi-region-copy`           | Copy all selections as one string (`M-w` does this too)             |
 | `C-c m k`     | `multi-region-kill`           | Kill all selections (`C-w` does this too)                           |
 | `C-c m r`     | `multi-region-replace`        | Replace every selection with a string                               |
@@ -80,6 +87,22 @@ Copying deselects everything, unless `multi-region-keep-after-copy` is on.
 `C-c m /` brings back whatever the last full deselect removed, whether it
 came from `C-c m c`, a copy, or `C-g` in a PDF or EPUB. Selections you made
 since stay selected.
+
+## Pictures
+
+A picture shown in the buffer is selected whole or not at all. Dragging
+across it with the text around it selects it with the text, and `C-click`
+on a picture selects just the picture. A selected picture gets a band in the
+selection color around it (`multi-region-image-margin` sets its width).
+
+This works for pictures in eww and EPUBs, for Org inline images
+(`org-display-inline-images`, `C-c C-x C-v`) and Markdown inline images
+(`markdown-display-inline-images`, `C-c C-x C-i`). In Org and Markdown a
+picture link to a file that exists counts even when the picture is not
+shown.
+
+Copying (`M-w`) copies the text only; pictures are for packages that build
+notes from the selections (see [For other packages](#for-other-packages)).
 
 ## In each kind of buffer
 
@@ -106,9 +129,14 @@ and selecting is done with the mouse:
 - Selections are remembered for each page, and copying collects them from
   all pages.
 - `C-g` deselects everything on every page.
+- `M-drag` selects a picture area: a rectangle, such as a figure, kept as a
+  picture rather than as text. It is drawn the way pdf-tools draws
+  rectangles, and stays selected next to the text. `M-click` inside one
+  deselects it.
 
 Copy (`M-w`, `C-c m w`), deselect last (`C-c m u`), deselect all (`C-c m c`)
-and bring back (`C-c m /`) work in PDFs. Kill, replace, run-command and
+and bring back (`C-c m /`) work in PDFs; copy takes the text only, not
+picture areas. Kill, replace, run-command and
 next/previous don't apply there. `C-w` copies instead of killing.
 
 Highlights are drawn with `pdf-view-selection-style`, so they cover exactly
@@ -128,6 +156,7 @@ Set these with `M-x customize-group RET multi-region` or `setq`:
 | `multi-region-thing`            | `word`  | What `C-c m SPC` selects without a region: `word`, `symbol`, `sentence`, `line`, or any `thing-at-point` thing |
 | `multi-region-keep-after-copy`  | `nil`   | Keep the selections after copying them                         |
 | `multi-region-face`             | `region`| Face of the selections                                         |
+| `multi-region-image-margin`     | `4`     | Width in pixels of the band around selected pictures; 0 for none |
 
 ## Other keys
 
@@ -149,8 +178,17 @@ active region becomes a selection first.
 
 - In a text buffer each selection is `(:beg BEG :end END :text TEXT)`.
 - In an EPUB it also has `:chapter`, the chapter index.
+- A text selection that holds pictures also has `:images`, a list in buffer
+  order. Each picture is `(:beg BEG :end END :file FILE)`, or
+  `(:beg BEG :end END :data DATA :type TYPE)` for one that is not in a file
+  (eww keeps downloaded pictures in memory). Pictures in an EPUB are files
+  in nov.el's temporary folder, which goes away with the buffer, so copy
+  them rather than link to them.
 - In a PDF it is `(:page PAGE :edges (LEFT TOP RIGHT BOTTOM) :text TEXT)`,
-  with edges as fractions of the page size.
+  with edges as fractions of the page size. A picture area also has
+  `:figure t`, and its text is empty. On each page, text comes in the order
+  it was selected and each picture area before the first text below its
+  top.
 
 `(multi-region-clear)` deselects everything.
 [readq](https://github.com/n0w1ht/readq) uses these to turn several
