@@ -380,7 +380,7 @@ imitates a click without a drag."
     (should (equal (multi-region-selections)
                    '((:beg 6 :end 14 :text "**\n**\n**"
                       :images ((:beg 6 :end 14 :data "PNGDATA" :type png))))))
-    ;; C-c m SPC on a picture deselects it, and selects it again.
+    ;; C-c M SPC on a picture deselects it, and selects it again.
     (goto-char 9)
     (multi-region-toggle)
     (should (= (multi-region--count) 0))

@@ -64,28 +64,28 @@ C-drag" works as it does in a word processor.
 
 ## Keyboard commands
 
-All commands are under the `C-c m` prefix.
+All commands are under the `C-c M` prefix.
 
 | Key           | Command                       | What it does                                                         |
 |---------------|-------------------------------|----------------------------------------------------------------------|
-| `C-c m SPC`   | `multi-region-toggle`         | Select the active region; without one, select the picture or word at point, or deselect the selection point is in |
-| `C-c m w`     | `multi-region-copy`           | Copy all selections as one string (`M-w` does this too)             |
-| `C-c m k`     | `multi-region-kill`           | Kill all selections (`C-w` does this too)                           |
-| `C-c m r`     | `multi-region-replace`        | Replace every selection with a string                               |
-| `C-c m x`     | `multi-region-do`             | Run a region command, such as `upcase-region`, on every selection   |
-| `C-c m n`     | `multi-region-next`           | Jump to the next selection                                          |
-| `C-c m p`     | `multi-region-previous`       | Jump to the previous selection                                      |
-| `C-c m u`     | `multi-region-remove-last`    | Deselect the most recent selection                                  |
-| `C-c m c`     | `multi-region-clear`          | Deselect everything                                                 |
-| `C-c m /`     | `multi-region-restore`        | Bring back what was last deselected all at once                     |
+| `C-c M SPC`   | `multi-region-toggle`         | Select the active region; without one, select the picture or word at point, or deselect the selection point is in |
+| `C-c M w`     | `multi-region-copy`           | Copy all selections as one string (`M-w` does this too)             |
+| `C-c M k`     | `multi-region-kill`           | Kill all selections (`C-w` does this too)                           |
+| `C-c M r`     | `multi-region-replace`        | Replace every selection with a string                               |
+| `C-c M x`     | `multi-region-do`             | Run a region command, such as `upcase-region`, on every selection   |
+| `C-c M n`     | `multi-region-next`           | Jump to the next selection                                          |
+| `C-c M p`     | `multi-region-previous`       | Jump to the previous selection                                      |
+| `C-c M u`     | `multi-region-remove-last`    | Deselect the most recent selection                                  |
+| `C-c M c`     | `multi-region-clear`          | Deselect everything                                                 |
+| `C-c M /`     | `multi-region-restore`        | Bring back what was last deselected all at once                     |
 
 `M-w` and `C-w` behave as usual while nothing is selected. Copied selections
-are joined with a newline; give `C-c m w` a prefix argument (`C-u C-c m w`)
+are joined with a newline; give `C-c M w` a prefix argument (`C-u C-c M w`)
 to type a different separator for one copy.
 
 Copying deselects everything, unless `multi-region-keep-after-copy` is on.
-`C-c m /` brings back whatever the last full deselect removed, whether it
-came from `C-c m c`, a copy, or `C-g` in a PDF or EPUB. Selections you made
+`C-c M /` brings back whatever the last full deselect removed, whether it
+came from `C-c M c`, a copy, or `C-g` in a PDF or EPUB. Selections you made
 since stay selected.
 
 ## Pictures
@@ -107,7 +107,7 @@ notes from the selections (see [For other packages](#for-other-packages)).
 ## In each kind of buffer
 
 **Text, Org, Markdown and code.** Everything above works. Undo after
-`C-w` or `C-c m r` puts the text back.
+`C-w` or `C-c M r` puts the text back.
 
 **eww and other read-only buffers.** Selecting, copying, jumping and
 deselecting work. Kill copies the selections and then stops with "Buffer is
@@ -134,8 +134,8 @@ and selecting is done with the mouse:
   rectangles, and stays selected next to the text. `M-click` inside one
   deselects it.
 
-Copy (`M-w`, `C-c m w`), deselect last (`C-c m u`), deselect all (`C-c m c`)
-and bring back (`C-c m /`) work in PDFs; copy takes the text only, not
+Copy (`M-w`, `C-c M w`), deselect last (`C-c M u`), deselect all (`C-c M c`)
+and bring back (`C-c M /`) work in PDFs; copy takes the text only, not
 picture areas. Kill, replace, run-command and
 next/previous don't apply there. `C-w` copies instead of killing.
 
@@ -153,7 +153,7 @@ Set these with `M-x customize-group RET multi-region` or `setq`:
 | Option                          | Default | Meaning                                                        |
 |---------------------------------|---------|----------------------------------------------------------------|
 | `multi-region-separator`        | `"\n"`  | String put between selections when they are copied or killed   |
-| `multi-region-thing`            | `word`  | What `C-c m SPC` selects without a region: `word`, `symbol`, `sentence`, `line`, or any `thing-at-point` thing |
+| `multi-region-thing`            | `word`  | What `C-c M SPC` selects without a region: `word`, `symbol`, `sentence`, `line`, or any `thing-at-point` thing |
 | `multi-region-keep-after-copy`  | `nil`   | Keep the selections after copying them                         |
 | `multi-region-face`             | `region`| Face of the selections                                         |
 | `multi-region-image-margin`     | `4`     | Width in pixels of the band around selected pictures; 0 for none |
@@ -161,8 +161,8 @@ Set these with `M-x customize-group RET multi-region` or `setq`:
 ## Other keys
 
 ```elisp
-;; Use C-c s instead of C-c m as the prefix.
-(define-key multi-region-mode-map (kbd "C-c m") nil)
+;; Use C-c s instead of C-c M as the prefix.
+(define-key multi-region-mode-map (kbd "C-c M") nil)
 (define-key multi-region-mode-map (kbd "C-c s") multi-region-command-map)
 
 ;; Select with M-S-drag instead of C-drag.

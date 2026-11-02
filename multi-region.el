@@ -32,19 +32,19 @@
 ;; as a selection as soon as you start a C-drag, so "drag, then C-drag,
 ;; then C-drag" works as it does in a word processor.
 ;;
-;; Keyboard (prefix C-c m):
+;; Keyboard (prefix C-c M):
 ;;
-;;   C-c m SPC   select the active region; without one, select the
+;;   C-c M SPC   select the active region; without one, select the
 ;;               picture or word at point, or deselect the selection at
 ;;               point
-;;   C-c m w     copy all selections        (M-w does this too)
-;;   C-c m k     kill all selections        (C-w does this too)
-;;   C-c m r     replace every selection with a string
-;;   C-c m x     run a region command on every selection
-;;   C-c m n/p   jump to the next/previous selection
-;;   C-c m u     deselect the most recent selection
-;;   C-c m c     deselect everything
-;;   C-c m /     bring back what was last deselected all at once
+;;   C-c M w     copy all selections        (M-w does this too)
+;;   C-c M k     kill all selections        (C-w does this too)
+;;   C-c M r     replace every selection with a string
+;;   C-c M x     run a region command on every selection
+;;   C-c M n/p   jump to the next/previous selection
+;;   C-c M u     deselect the most recent selection
+;;   C-c M c     deselect everything
+;;   C-c M /     bring back what was last deselected all at once
 ;;
 ;; M-w and C-w only change behavior while selections exist.  Copied
 ;; selections are joined with `multi-region-separator'.
@@ -85,7 +85,7 @@
 ;;
 ;; To use other keys:
 ;;
-;;   (define-key multi-region-mode-map (kbd "C-c m") nil)
+;;   (define-key multi-region-mode-map (kbd "C-c M") nil)
 ;;   (define-key multi-region-mode-map (kbd "C-c s") multi-region-command-map)
 ;;   (define-key multi-region-mode-map [C-down-mouse-1] nil)
 ;;   (define-key multi-region-mode-map [M-S-down-mouse-1] #'multi-region-mouse-drag)
@@ -1390,7 +1390,7 @@ In a PDF buffer this adds a region to the page, as
                   :filter ,(lambda (cmd)
                              (and (or (multi-region--pdf-p) (multi-region--nov-p))
                                   cmd))))
-    (define-key map (kbd "C-c m") multi-region-command-map)
+    (define-key map (kbd "C-c M") multi-region-command-map)
     (define-key map [remap kill-ring-save] #'multi-region-kill-ring-save)
     (define-key map [remap kill-region] #'multi-region-kill-region)
     map)
