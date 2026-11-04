@@ -873,11 +873,17 @@ Picture areas are left out."
 
 ;;;; Either kind of buffer
 
+(defun multi-region--join-hyphens (text)
+  "TEXT with the words PDFs hyphenate with a ¬ joined again.
+\"inflam¬ mation\" becomes \"inflammation\", also over a line break."
+  (replace-regexp-in-string "\\([^ \t\n\r]\\)¬[ \t\r\n]*" "\\1" text))
+
 (defun multi-region--texts ()
   "Return all selected strings of the current buffer."
-  (if (multi-region--pdf-p)
-      (multi-region--pdf-texts)
-    (multi-region--text-texts)))
+  (mapcar #'multi-region--join-hyphens
+          (if (multi-region--pdf-p)
+              (multi-region--pdf-texts)
+            (multi-region--text-texts))))
 
 (defun multi-region--count ()
   "Return the number of selections in the current buffer."
@@ -971,12 +977,17 @@ TEXT), EDGES being one region as a list (LEFT TOP RIGHT BOTTOM) of
 relative coordinates.  A picture area selected with M-drag also has
 :figure t, and empty TEXT.
 
+In TEXT, a word hyphenated with a ¬, as PDFs often have, is joined
+again (\"inflam¬ mation\" is \"inflammation\").
+
 This is the function for other packages to read the selections; it
 does not change them.  Use `multi-region-clear' to deselect."
   (when absorb (multi-region--absorb-region))
-  (if (multi-region--pdf-p)
-      (multi-region--pdf-selections)
-    (multi-region--text-selections)))
+  (mapcar (lambda (s)
+            (plist-put s :text (multi-region--join-hyphens (plist-get s :text))))
+          (if (multi-region--pdf-p)
+              (multi-region--pdf-selections)
+            (multi-region--text-selections))))
 
 ;;;; Commands
 

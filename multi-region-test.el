@@ -33,6 +33,16 @@
     (multi-region-clear)
     (should-not (multi-region-selections))))
 
+(ert-deftest multi-region-test-not-sign-hyphen ()
+  ;; "inflam¬ mation", as PDFs hyphenate, is copied and reported joined.
+  (with-temp-buffer
+    (insert "acute inflam¬ mation and liber¬\nation")
+    (multi-region-mode 1)
+    (multi-region--add 1 (point-max))
+    (should (equal (plist-get (car (multi-region-selections)) :text)
+                   "acute inflammation and liberation"))
+    (should (equal (multi-region--texts) '("acute inflammation and liberation")))))
+
 (ert-deftest multi-region-test-selections-in-epub ()
   (with-temp-buffer
     (insert "Chapter two text with a selection.")

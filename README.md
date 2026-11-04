@@ -81,7 +81,8 @@ All commands are under the `C-c M` prefix.
 
 `M-w` and `C-w` behave as usual while nothing is selected. Copied selections
 are joined with a newline; give `C-c M w` a prefix argument (`C-u C-c M w`)
-to type a different separator for one copy.
+to type a different separator for one copy. A word that a PDF hyphenates
+with `¬` is joined again ("inflam¬ mation" copies as "inflammation").
 
 Copying deselects everything, unless `multi-region-keep-after-copy` is on.
 `C-c M /` brings back whatever the last full deselect removed, whether it
