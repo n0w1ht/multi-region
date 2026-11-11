@@ -1,6 +1,6 @@
 ;;; multi-region.el --- Select several separate regions at once  -*- lexical-binding: t; -*-
 
-;; Version: 0.4.0
+;; Version: 0.5.0
 ;; Package-Requires: ((emacs "27.1"))
 ;; Keywords: convenience, mouse
 
@@ -71,6 +71,12 @@
 ;;   without Control, keeps the selections too; a plain drag starts
 ;;   over, as it does in pdf-tools.
 ;;
+;; - pdf-canvas: that viewer holds several selections itself, on any
+;;   number of pages (drag, then C-drag; M-drag for a picture area).
+;;   This package gives them the commands above and reports them to
+;;   other packages through `multi-region-selections', in the same form
+;;   as the selections of a pdf-tools buffer.
+;;
 ;; In PDF and EPUB buffers C-g deselects everything, on all pages or
 ;; chapters.
 ;;
@@ -115,6 +121,13 @@
 (declare-function pdf-view-redisplay "ext:pdf-view")
 (declare-function pdf-view-mouse-set-region-rectangle "ext:pdf-view")
 (declare-function image-mode-window-get "image-mode")
+(declare-function pdf-canvas-selections "ext:pdf-canvas")
+(declare-function pdf-canvas-selection-count "ext:pdf-canvas")
+(declare-function pdf-canvas-add-selection "ext:pdf-canvas")
+(declare-function pdf-canvas-remove-selection "ext:pdf-canvas")
+(declare-function pdf-canvas-clear-selections "ext:pdf-canvas")
+(declare-function pdf-canvas-mouse-add "ext:pdf-canvas")
+(declare-function pdf-canvas-quit "ext:pdf-canvas")
 
 ;;;; Options
 
@@ -178,6 +191,17 @@ It is nil once text was selected after it.")
 (defun multi-region--pdf-p ()
   "Return non-nil if the current buffer is a pdf-tools buffer."
   (derived-mode-p 'pdf-view-mode))
+
+(defun multi-region--canvas-p ()
+  "Return non-nil if the current buffer is a pdf-canvas buffer.
+pdf-canvas keeps several selections itself, on any number of pages, so
+there this package only passes them on."
+  (derived-mode-p 'pdf-canvas-mode))
+
+(defun multi-region--paged-p ()
+  "Return non-nil if the current buffer shows a PDF, in either viewer.
+Such a buffer has no text to move point over."
+  (or (multi-region--pdf-p) (multi-region--canvas-p)))
 
 (defun multi-region--nov-p ()
   "Return non-nil if the current buffer is a nov.el buffer."
@@ -733,7 +757,10 @@ A click without a drag deselects the picture area under it."
 \\[keyboard-quit] runs this in PDF and EPUB buffers."
   (interactive)
   (multi-region-clear)
-  (keyboard-quit))
+  (if (multi-region--canvas-p)
+      ;; Also removes the search highlights, then quits.
+      (pdf-canvas-quit)
+    (keyboard-quit)))
 
 (define-obsolete-function-alias 'multi-region-pdf-keyboard-quit
   #'multi-region-keyboard-quit "0.2.2")
@@ -881,22 +908,41 @@ Picture areas are left out."
 (defun multi-region--texts ()
   "Return all selected strings of the current buffer."
   (mapcar #'multi-region--join-hyphens
-          (if (multi-region--pdf-p)
-              (multi-region--pdf-texts)
-            (multi-region--text-texts))))
+          (cond ((multi-region--canvas-p)
+                 (mapcar (lambda (s) (plist-get s :text))
+                         (seq-remove (lambda (s) (plist-get s :figure))
+                                     (multi-region--canvas-selections))))
+                ((multi-region--pdf-p)
+                 (multi-region--pdf-texts))
+                (t (multi-region--text-texts)))))
+
+(defun multi-region--canvas-selections ()
+  "Return the selections of a pdf-canvas buffer, page by page.
+Each is a plist (:page PAGE :edges EDGES :text TEXT), with :figure t
+and an empty TEXT for a picture area, as in a pdf-tools buffer.  The
+keys pdf-canvas adds, such as :ends, are kept."
+  (mapcar (lambda (s)
+            (if (plist-get s :figure)
+                (plist-put (copy-sequence s) :text "")
+              s))
+          (pdf-canvas-selections)))
 
 (defun multi-region--count ()
   "Return the number of selections in the current buffer."
-  (if (multi-region--pdf-p)
-      (let ((page (multi-region--pdf-live-page))
-            (n (+ (length (multi-region--pdf-edges))
-                  (length multi-region--pdf-rects))))
-        (dolist (entry multi-region--pdf-regions n)
-          (unless (eq (car entry) page)
-            (setq n (+ n (length (cdr entry)))))))
+  (cond
+   ((multi-region--canvas-p)
+    (pdf-canvas-selection-count))
+   ((multi-region--pdf-p)
+    (let ((page (multi-region--pdf-live-page))
+          (n (+ (length (multi-region--pdf-edges))
+                (length multi-region--pdf-rects))))
+      (dolist (entry multi-region--pdf-regions n)
+        (unless (eq (car entry) page)
+          (setq n (+ n (length (cdr entry))))))))
+   (t
     (let ((n (length (multi-region--live))))
       (dolist (chapter multi-region--nov-stash n)
-        (setq n (+ n (length (cdr chapter))))))))
+        (setq n (+ n (length (cdr chapter)))))))))
 
 (defun multi-region--any-p ()
   "Return non-nil if the current buffer has selections."
@@ -904,7 +950,7 @@ Picture areas are left out."
 
 (defun multi-region--assert-text ()
   "Signal an error in buffers that have no text to move point over."
-  (when (multi-region--pdf-p)
+  (when (multi-region--paged-p)
     (user-error "Not available in PDF buffers; select with the mouse")))
 
 (defun multi-region--reset ()
@@ -975,7 +1021,9 @@ END :data DATA :type TYPE) for a picture that is not in a file.
 In a PDF each selection is a plist (:page PAGE :edges EDGES :text
 TEXT), EDGES being one region as a list (LEFT TOP RIGHT BOTTOM) of
 relative coordinates.  A picture area selected with M-drag also has
-:figure t, and empty TEXT.
+:figure t, and empty TEXT.  In a pdf-canvas buffer EDGES is the box
+around the selected text, and the plist has further keys, see
+`pdf-canvas-selections'.
 
 In TEXT, a word hyphenated with a ¬, as PDFs often have, is joined
 again (\"inflam¬ mation\" is \"inflammation\").
@@ -985,9 +1033,9 @@ does not change them.  Use `multi-region-clear' to deselect."
   (when absorb (multi-region--absorb-region))
   (mapcar (lambda (s)
             (plist-put s :text (multi-region--join-hyphens (plist-get s :text))))
-          (if (multi-region--pdf-p)
-              (multi-region--pdf-selections)
-            (multi-region--text-selections))))
+          (cond ((multi-region--canvas-p) (multi-region--canvas-selections))
+                ((multi-region--pdf-p) (multi-region--pdf-selections))
+                (t (multi-region--text-selections)))))
 
 ;;;; Commands
 
@@ -1017,11 +1065,14 @@ point, a word by default."
 In a text buffer a list of (BEG . END) marker pairs, with the stashed
 EPUB chapters as (:nov STASH); in a PDF (:pdf REGIONS :rects RECTS),
 REGIONS being an alist of (PAGE . EDGES) that includes the page on
-display and RECTS the picture areas.")
+display and RECTS the picture areas; in a pdf-canvas buffer (:canvas
+SELECTIONS), as `pdf-canvas-selections' returns them.")
 
 (defun multi-region--snapshot ()
   "Return the selections of this buffer in the form of `multi-region--cleared'."
   (cond
+   ((multi-region--canvas-p)
+    (list :canvas (pdf-canvas-selections)))
    ((multi-region--pdf-p)
     (let ((page (multi-region--pdf-live-page))
           (edges (multi-region--pdf-edges)))
@@ -1053,10 +1104,13 @@ display and RECTS the picture areas.")
     (when (multi-region--any-p)
       (setq multi-region--cleared (multi-region--snapshot)))
     (multi-region--reset)
-    (when (multi-region--pdf-p)
+    (cond
+     ((multi-region--canvas-p)
+      (pdf-canvas-clear-selections))
+     ((multi-region--pdf-p)
       (cond ((bound-and-true-p pdf-view-active-region)
              (pdf-view-deactivate-region))
-            (rects (pdf-view-redisplay t))))))
+            (rects (pdf-view-redisplay t)))))))
 
 (defun multi-region-restore ()
   "Select again what was deselected all at once, last time.
@@ -1068,6 +1122,18 @@ PDF or EPUB, or copying cleared.  Selections made since are kept."
     (unless saved
       (user-error "Nothing to bring back"))
     (cond
+     ((eq (car saved) :canvas)
+      (unless (multi-region--canvas-p)
+        (user-error "Nothing to bring back"))
+      (let ((have (mapcar (lambda (s) (list (plist-get s :page)
+                                            (plist-get s :mode)
+                                            (plist-get s :ends)))
+                          (pdf-canvas-selections))))
+        (dolist (s (cadr saved))
+          (unless (member (list (plist-get s :page) (plist-get s :mode)
+                                (plist-get s :ends))
+                          have)
+            (pdf-canvas-add-selection s)))))
      ((eq (car saved) :pdf)
       (unless (multi-region--pdf-p)
         (user-error "Nothing to bring back"))
@@ -1112,9 +1178,19 @@ PDF or EPUB, or copying cleared.  Selections made since are kept."
 
 (defun multi-region-remove-last ()
   "Deselect the most recently added selection.
-In a PDF this is the last text region or picture area added on the
-page on display."
+In a pdf-tools buffer this is the last text region or picture area
+added on the page on display."
   (interactive)
+  (if (multi-region--canvas-p)
+      (let ((n (pdf-canvas-selection-count)))
+        (when (= n 0)
+          (user-error "No selections"))
+        ;; pdf-canvas numbers its selections in the order they were made.
+        (pdf-canvas-remove-selection (1- n)))
+    (multi-region--remove-last-1)))
+
+(defun multi-region--remove-last-1 ()
+  "Do `multi-region-remove-last' in a pdf-tools or a text buffer."
   (if (multi-region--pdf-p)
       (let* ((page (multi-region--pdf-live-page))
              (edges (multi-region--pdf-edges))
@@ -1257,7 +1333,7 @@ PDF selections cannot be deleted, so there they are copied."
   (cond
    ((not (multi-region--any-p))
     (multi-region--call-original 'kill-region))
-   ((multi-region--pdf-p)
+   ((multi-region--paged-p)
     (call-interactively #'multi-region-copy))
    (t
     (call-interactively #'multi-region-kill))))
@@ -1347,8 +1423,13 @@ is active when the drag starts, it is kept as a selection too.
 In a PDF buffer this adds a region to the page, as
 `pdf-view-mouse-extend-region' is meant to do."
   (interactive "@e")
-  (if (multi-region--pdf-p)
-      (multi-region--pdf-mouse-drag event)
+  (cond
+   ((multi-region--canvas-p)
+    ;; pdf-canvas adds selections itself; a click deselects there too.
+    (pdf-canvas-mouse-add event))
+   ((multi-region--pdf-p)
+    (multi-region--pdf-mouse-drag event))
+   (t
     (multi-region--absorb-region)
     (let* ((posn (event-start event))
            (window (posn-window posn))
@@ -1362,7 +1443,7 @@ In a PDF buffer this adds a region to the page, as
           ;; this mode, such as opening a link in eww or an EPUB.
           (let ((command (multi-region--text-binding event)))
             (when command
-              (funcall command event))))))))
+              (funcall command event)))))))))
 
 ;;;; Modes
 
@@ -1401,6 +1482,11 @@ In a PDF buffer this adds a region to the page, as
                   :filter ,(lambda (cmd)
                              (and (or (multi-region--pdf-p) (multi-region--nov-p))
                                   cmd))))
+    ;; pdf-canvas binds C-g to its own command, which deselects without
+    ;; remembering what was selected.
+    (define-key map [remap pdf-canvas-quit]
+      `(menu-item "" multi-region-keyboard-quit
+                  :filter ,(lambda (cmd) (and (multi-region--canvas-p) cmd))))
     (define-key map (kbd "C-c M") multi-region-command-map)
     (define-key map [remap kill-ring-save] #'multi-region-kill-ring-save)
     (define-key map [remap kill-region] #'multi-region-kill-region)

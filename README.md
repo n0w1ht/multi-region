@@ -9,7 +9,8 @@ passages on several pages and copy them in one go.
 
 It works in plain text, Org, Markdown and code buffers, in read-only buffers
 such as eww, in EPUB books opened with [nov.el](https://depp.brause.cc/nov.el/),
-and in PDFs opened with [pdf-tools](https://github.com/vedang/pdf-tools).
+and in PDFs opened with [pdf-tools](https://github.com/vedang/pdf-tools) or
+pdf-canvas.
 
 Pictures can be selected along with the text: drag across a picture in eww,
 an EPUB, Org or Markdown, or mark a figure in a PDF with `M-drag`. Other
