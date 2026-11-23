@@ -19,9 +19,8 @@ the pictures together, so one extract can hold both.
 
 ## Installation
 
-multi-region is a single file, `multi-region.el`, and needs Emacs 27.1 or
-later. Neither nov.el nor pdf-tools is required; multi-region uses them only
-when they are there.
+multi-region needs Emacs 27.1 or later. Neither nov.el nor pdf-tools is
+required; multi-region uses them only when they are there.
 
 **With `package-vc-install`** (Emacs 29 or later):
 
@@ -37,8 +36,8 @@ when they are there.
   :config (global-multi-region-mode 1))
 ```
 
-**By hand:** put `multi-region.el` in a folder on your `load-path`, then add
-this to your init file:
+**By hand:** put the `multi-region*.el` files in a folder on your
+`load-path`, then add this to your init file:
 
 ```elisp
 (require 'multi-region)
@@ -47,6 +46,8 @@ this to your init file:
 
 The mode line shows `MR` while the mode is on, and `MR[3]` when three
 pieces are selected.
+
+The manual is in Emacs: `C-h R multi-region`, or `C-c M h`.
 
 ## Selecting with the mouse
 
@@ -65,7 +66,8 @@ C-drag" works as it does in a word processor.
 
 ## Keyboard commands
 
-All commands are under the `C-c M` prefix.
+All commands are under the `C-c M` prefix, which `multi-region-prefix-key`
+changes (see [Other keys](#other-keys)).
 
 | Key           | Command                       | What it does                                                         |
 |---------------|-------------------------------|----------------------------------------------------------------------|
@@ -79,6 +81,7 @@ All commands are under the `C-c M` prefix.
 | `C-c M u`     | `multi-region-remove-last`    | Deselect the most recent selection                                  |
 | `C-c M c`     | `multi-region-clear`          | Deselect everything                                                 |
 | `C-c M /`     | `multi-region-restore`        | Bring back what was last deselected all at once                     |
+| `C-c M h`     | `multi-region-manual`         | Open the manual                                                     |
 
 `M-w` and `C-w` behave as usual while nothing is selected. Copied selections
 are joined with a newline; give `C-c M w` a prefix argument (`C-u C-c M w`)
@@ -157,15 +160,16 @@ Set these with `M-x customize-group RET multi-region` or `setq`:
 | `multi-region-separator`        | `"\n"`  | String put between selections when they are copied or killed   |
 | `multi-region-thing`            | `word`  | What `C-c M SPC` selects without a region: `word`, `symbol`, `sentence`, `line`, or any `thing-at-point` thing |
 | `multi-region-keep-after-copy`  | `nil`   | Keep the selections after copying them                         |
+| `multi-region-prefix-key`       | `"C-c M"` | Key that leads to the commands; `nil` for none               |
 | `multi-region-face`             | `region`| Face of the selections                                         |
 | `multi-region-image-margin`     | `4`     | Width in pixels of the band around selected pictures; 0 for none |
 
 ## Other keys
 
 ```elisp
-;; Use C-c s instead of C-c M as the prefix.
-(define-key multi-region-mode-map (kbd "C-c M") nil)
-(define-key multi-region-mode-map (kbd "C-c s") multi-region-command-map)
+;; Use C-c s instead of C-c M as the prefix (Emacs 29 or later; on older
+;; Emacs, setq it before multi-region is loaded, or use Customize).
+(setopt multi-region-prefix-key "C-c s")
 
 ;; Select with M-S-drag instead of C-drag.
 (define-key multi-region-mode-map [C-down-mouse-1] nil)
@@ -196,13 +200,43 @@ active region becomes a selection first.
 [readq](https://github.com/n0w1ht/readq) uses these to turn several
 passages into one extract.
 
+## The code
+
+The code is split by viewer. Load `multi-region`; it loads the rest.
+
+| File                        | What is in it                                        |
+|-----------------------------|------------------------------------------------------|
+| `multi-region.el`           | Commands, keys and the mode                          |
+| `multi-region-text.el`      | Text buffers, and pictures in them                   |
+| `multi-region-epub.el`      | nov.el: selections kept across chapters              |
+| `multi-region-pdf.el`       | pdf-tools: selections kept across pages, picture areas |
+| `multi-region-pdf-tools.el` | Everything that relies on how pdf-tools works inside |
+| `multi-region-canvas.el`    | pdf-canvas                                           |
+
+`multi-region-pdf-tools.el` lists, at the top, each thing it takes for
+granted about pdf-tools internals: the form of `pdf-view-active-region`,
+which functions call which, a private variable, and so on.
+
 ## Running the tests
 
 ```sh
-emacs -Q --batch -L . -l multi-region-test.el -f ert-run-tests-batch-and-exit
+make test             # all tests; pdf-tools, pdf-canvas and nov.el are imitated
+make test-pdf-tools   # check the pdf-tools you have installed
+make compile          # byte-compile; a warning is an error
+make check            # all three
+make info             # rebuild the manual from doc/multi-region.org
 ```
 
-The tests imitate pdf-tools and nov.el, so neither needs to be installed.
+`make test` imitates pdf-tools, so it cannot notice when a pdf-tools update
+changes what multi-region relies on. `make test-pdf-tools` can: it loads
+the real pdf-tools (the one installed with package.el, or the one in
+`PDF_TOOLS=/path/to/pdf-tools/lisp`) and checks each assumption listed in
+`multi-region-pdf-tools.el`. Run it after updating pdf-tools. A failure
+names the assumption that broke, for example:
+
+```
+Info: pdf-tools 20260102.1101 breaks assumption 2 in multi-region-pdf-tools.el
+```
 
 ## License
 

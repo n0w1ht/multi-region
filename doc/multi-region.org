@@ -1,0 +1,312 @@
+#+title: multi-region: select several pieces of text at once
+#+subtitle: for version 0.5.0
+#+author: Hormoz Zamanpour Siahkal
+#+language: en
+#+options: H:3 num:t toc:t ':t
+#+export_file_name: multi-region.texi
+#+texinfo_filename: multi-region.info
+#+texinfo_dir_category: Emacs misc features
+#+texinfo_dir_title: multi-region: (multi-region).
+#+texinfo_dir_desc: Select several separate pieces of text at once
+
+# The source of the manual that C-h R multi-region shows.  After
+# editing it, run `make info' to rebuild multi-region.texi and
+# multi-region.info.
+
+Emacs normally lets you select one piece of text at a time.
+multi-region lets you select several.  In "I love ClaudeAI very much"
+you can have /love/ and /much/ selected, and nothing else, then copy
+both with one key.
+
+It works in text, Org, Markdown and code buffers, in read-only buffers
+such as eww, in EPUB books (nov.el), and in PDFs (pdf-tools or
+pdf-canvas).  In a PDF you can select passages on several pages and copy
+them in one go.
+
+Open this manual with ~C-h R multi-region~ or ~C-c M h~.  In it, ~i~
+looks up a command or option by name and ~s~ searches the text.
+
+* Getting started
+
+** Turning it on
+#+findex: multi-region-mode
+#+findex: global-multi-region-mode
+
+Put the folder of multi-region on your load path and add this to your
+init file:
+
+#+begin_src emacs-lisp
+(require 'multi-region)
+(global-multi-region-mode 1)
+#+end_src
+
+To try it in one buffer only, use ~M-x multi-region-mode~ instead.
+
+The mode line shows =MR= while the mode is on, and =MR[3]= when three
+pieces are selected.
+
+** A first try
+
+1. Open any text.  Hold ~Control~ and drag the mouse over a word.  It
+   stays highlighted.
+2. ~C-drag~ over another word, further on.  Both are highlighted.
+3. Press ~M-w~.  Both words are copied, one per line, and deselected.
+4. Changed your mind?  ~C-c M /~ selects them again.
+
+That is most of it.  The rest of this manual is details.
+
+* Selecting
+
+** With the mouse
+#+findex: multi-region-mouse-drag
+
+| Mouse            | What it does                                                 |
+|------------------+--------------------------------------------------------------|
+| ~C-drag~         | Add the dragged text to the selections                       |
+| ~C-double-click~ | Add the word under the pointer                               |
+| ~C-triple-click~ | Add the line under the pointer                               |
+| ~C-click~        | Deselect the selection under the pointer, or select a picture |
+
+You can start the usual way: drag, or ~C-SPC~ and move.  As soon as
+you ~C-drag~ somewhere else, that first region becomes a selection too.
+So "drag, then C-drag, then C-drag" works as in a word processor.
+
+Selections that touch or overlap become one.
+
+** With the keyboard
+#+findex: multi-region-toggle
+#+vindex: multi-region-thing
+
+~C-c M SPC~ does what makes sense at point:
+
+- with an active region, it selects the region;
+- inside a selection, it deselects it;
+- otherwise, it selects the picture or the word at point.
+
+The "word" can be something else: see =multi-region-thing= in [[*Options][Options]].
+
+* Using the selections
+
+All commands are under the prefix ~C-c M~.  This manual uses that
+key; if you prefer another, see [[*Other keys][Other keys]].
+
+| Key         | What it does                                         |
+|-------------+------------------------------------------------------|
+| ~C-c M w~   | Copy all selections as one piece of text (also ~M-w~) |
+| ~C-c M k~   | Kill all selections (also ~C-w~)                      |
+| ~C-c M r~   | Replace every selection with the same text           |
+| ~C-c M x~   | Run a region command on every selection              |
+| ~C-c M n~   | Jump to the next selection                           |
+| ~C-c M p~   | Jump to the previous selection                       |
+| ~C-c M u~   | Deselect the most recent selection                   |
+| ~C-c M c~   | Deselect everything                                  |
+| ~C-c M /~   | Bring back what was last deselected all at once      |
+| ~C-c M h~   | Open this manual                                     |
+
+** Copying and killing
+#+findex: multi-region-copy
+#+findex: multi-region-kill
+#+findex: multi-region-kill-ring-save
+#+findex: multi-region-kill-region
+#+vindex: multi-region-separator
+#+vindex: multi-region-keep-after-copy
+
+~M-w~ and ~C-w~ act on the selections while there are any, and behave
+as usual when there are none.  You don't have to think about it.
+
+Copied pieces are joined with a newline.  For a different separator just
+this once, use ~C-u C-c M w~ and type it.  To change it for good, set
+=multi-region-separator=.
+
+Copying deselects everything, so you can start fresh.  Set
+=multi-region-keep-after-copy= to keep the selections instead.
+
+A word that a PDF split with a =¬= is joined again: "inflam¬ mation"
+is copied as "inflammation".
+
+** Changing all selections at once
+#+findex: multi-region-replace
+#+findex: multi-region-do
+
+~C-c M r~ asks for a text and puts it in place of every selection.
+
+~C-c M x~ asks for a command and runs it on each selection as if it were
+the region.  Good ones to try: =upcase-region=, =comment-region=,
+=fill-region=.
+
+~C-/~ (undo) puts the text back after either, and after ~C-w~.
+
+** Moving between selections
+#+findex: multi-region-next
+#+findex: multi-region-previous
+
+~C-c M n~ and ~C-c M p~ move point to the next and previous selection.
+
+** Deselecting and bringing back
+#+findex: multi-region-remove-last
+#+findex: multi-region-clear
+#+findex: multi-region-restore
+#+findex: multi-region-keyboard-quit
+
+~C-c M u~ deselects the selection you made last.  ~C-c M c~ deselects
+everything.
+
+~C-c M /~ brings back what was last deselected all at once, whether by
+~C-c M c~, by copying, or by ~C-g~ in a PDF or EPUB.  Selections you
+made since are kept.
+
+* Pictures
+#+vindex: multi-region-image-margin
+
+A picture in the buffer is selected whole or not at all.  Drag across it
+with the text around it, or ~C-click~ it to select it alone.  A selected
+picture gets a band in the selection color; =multi-region-image-margin=
+sets its width, and 0 turns it off.
+
+This works for pictures in eww and EPUBs, and for inline images in Org
+(~C-c C-x C-v~) and Markdown (~C-c C-x C-i~).  In Org and Markdown, a link
+to a picture file counts even when the picture isn't shown.
+
+Copying takes only the text.  The pictures are for packages that build
+notes from your selections, such as readq; see [[*For other packages][For other packages]].
+
+* In each kind of buffer
+
+** Text, Org, Markdown and code
+
+Everything in this manual works.
+
+** eww and other read-only buffers
+
+Selecting, copying, jumping and deselecting work.  Killing, replacing and
+running a command stop with "Buffer is read-only", as they would for an
+ordinary region (killing copies first).
+
+On a link, ~C-drag~ selects.  A ~C-click~ that selects nothing still
+opens the link in a new window, as usual.
+
+** EPUB books
+
+In books opened with nov.el, selections are remembered for each
+chapter and come back when you return to it.  Copying collects them
+from all chapters, in reading order.  ~C-g~ deselects everything in every chapter.
+
+** PDFs (pdf-tools)
+#+findex: multi-region-pdf-mouse-set-region
+#+findex: multi-region-pdf-mouse-rectangle
+
+A PDF page is a picture, so there is no point to move: you select with
+the mouse.
+
+| Mouse     | What it does                                     |
+|-----------+--------------------------------------------------|
+| drag      | Start over with a new selection on the page      |
+| ~C-drag~  | Add another selection                            |
+| click     | Nothing: the selections stay                     |
+| ~M-drag~  | Select a picture area, such as a figure           |
+| ~M-click~ | Deselect the picture area under the pointer       |
+
+Selections are remembered for each page, and copying collects them from
+all pages.  ~C-g~ deselects everything on every page.
+
+Copy, deselect last, deselect all and bring back work as in text.
+Kill, replace, run-command and next/previous don't apply; ~C-w~ copies
+instead of killing.
+
+Highlights follow =pdf-view-selection-style=, so what you see is
+exactly what is copied.
+
+** PDFs (pdf-canvas)
+
+pdf-canvas keeps several selections itself, on any number of pages
+(drag, then ~C-drag~; ~M-drag~ for a picture area).  multi-region gives
+them the same commands as in a pdf-tools buffer, and ~C-g~ remembers
+what it deselects, so ~C-c M /~ can bring it back.
+
+* Options
+
+Change these with ~M-x customize-group RET multi-region~, or with
+=setq= in your init file.
+
+- =multi-region-separator= :: What goes between copied pieces.  A
+  newline by default.
+- =multi-region-keep-after-copy= :: Keep the selections after copying.
+  Off by default.
+- =multi-region-thing= :: What ~C-c M SPC~ selects at point: =word= (the
+  default), =symbol=, =sentence=, =line=, or anything =thing-at-point=
+  knows.
+- =multi-region-image-margin= :: Width in pixels of the band around
+  selected pictures.  4 by default; 0 for none.
+- =multi-region-prefix-key= :: The key that leads to the commands.
+  ~C-c M~ by default; see [[*Other keys][Other keys]].
+- =multi-region-face= :: How selections look.  Like the region, by
+  default.
+
+** Other keys
+#+vindex: multi-region-prefix-key
+#+vindex: multi-region-mode-map
+#+vindex: multi-region-command-map
+
+To use ~C-c s~ as the prefix instead of ~C-c M~:
+
+#+begin_src emacs-lisp
+(setopt multi-region-prefix-key "C-c s")
+#+end_src
+
+=setopt= needs Emacs 29.  On older versions, use ~M-x customize-option
+RET multi-region-prefix-key~, or =setq= it /before/ multi-region is
+loaded; a =setq= afterwards does nothing.  Set it to =nil= for no
+prefix at all, and bind the commands in =multi-region-command-map= to
+keys of your own.
+
+To select with ~M-S-drag~ instead of ~C-drag~:
+
+#+begin_src emacs-lisp
+(define-key multi-region-mode-map [C-down-mouse-1] nil)
+(define-key multi-region-mode-map [M-S-down-mouse-1] #'multi-region-mouse-drag)
+#+end_src
+
+* For other packages
+#+findex: multi-region-selections
+
+=(multi-region-selections &optional absorb)= returns the selections of
+the current buffer in reading order, without changing them.  With
+=absorb=, an active region becomes a selection first.  Each selection is
+a property list:
+
+- in text: =(:beg BEG :end END :text TEXT)=;
+- in an EPUB, also =:chapter=, the chapter number;
+- with pictures, also =:images=, each =(:beg BEG :end END :file FILE)=,
+  or =:data= and =:type= for a picture that is not in a file;
+- in a PDF: =(:page PAGE :edges (LEFT TOP RIGHT BOTTOM) :text TEXT)=,
+  edges as fractions of the page.  A picture area also has =:figure t=
+  and empty text.
+
+=(multi-region-clear)= deselects everything.
+
+* When pdf-tools is updated
+
+multi-region relies on a few details of how pdf-tools works inside.
+They are all in one file, =multi-region-pdf-tools.el=, listed at its
+top.  After updating pdf-tools, run this in multi-region's folder:
+
+#+begin_src sh
+make test-pdf-tools
+#+end_src
+
+If something no longer holds, the test says which, for example "breaks
+assumption 2 in multi-region-pdf-tools.el".  Until it is fixed, PDF
+selections may not draw or copy correctly; text and EPUB buffers are
+not affected.
+
+* Command index
+:PROPERTIES:
+:INDEX: fn
+:UNNUMBERED: t
+:END:
+
+* Option index
+:PROPERTIES:
+:INDEX: vr
+:UNNUMBERED: t
+:END:

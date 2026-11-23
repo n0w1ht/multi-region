@@ -1,0 +1,484 @@
+\input texinfo    @c -*- texinfo -*-
+@c %**start of header
+@setfilename multi-region.info
+@settitle multi-region: select several pieces of text at once
+@documentencoding UTF-8
+@documentlanguage en
+@c %**end of header
+
+@dircategory Emacs misc features
+@direntry
+* multi-region: (multi-region). Select several separate pieces of text at once.
+@end direntry
+
+@finalout
+@titlepage
+@title multi-region: select several pieces of text at once
+@subtitle for version 0.5.0
+@author Hormoz Zamanpour Siahkal
+@end titlepage
+
+@contents
+
+@ifnottex
+@node Top
+@top multi-region: select several pieces of text at once
+
+Emacs normally lets you select one piece of text at a time.
+multi-region lets you select several.  In ``I love ClaudeAI very much''
+you can have @emph{love} and @emph{much} selected@comma{} and nothing else@comma{} then copy
+both with one key.
+
+It works in text@comma{} Org@comma{} Markdown and code buffers@comma{} in read-only buffers
+such as eww@comma{} in EPUB books (nov.el)@comma{} and in PDFs (pdf-tools or
+pdf-canvas).  In a PDF you can select passages on several pages and copy
+them in one go.
+
+Open this manual with @code{C-h R multi-region} or @code{C-c M h}.  In it@comma{} @code{i}
+looks up a command or option by name and @code{s} searches the text.
+
+@end ifnottex
+
+@menu
+* Getting started::
+* Selecting::
+* Using the selections::
+* Pictures::
+* In each kind of buffer::
+* Options::
+* For other packages::
+* When pdf-tools is updated::
+* Command index::
+* Option index::
+
+@detailmenu
+--- The Detailed Node Listing ---
+
+Getting started
+
+* Turning it on::
+* A first try::
+
+Selecting
+
+* With the mouse::
+* With the keyboard::
+
+Using the selections
+
+* Copying and killing::
+* Changing all selections at once::
+* Moving between selections::
+* Deselecting and bringing back::
+
+In each kind of buffer
+
+* Text@comma{} Org@comma{} Markdown and code: Text Org Markdown and code. 
+* eww and other read-only buffers::
+* EPUB books::
+* PDFs (pdf-tools)::
+* PDFs (pdf-canvas)::
+
+Options
+
+* Other keys::
+
+@end detailmenu
+@end menu
+
+@node Getting started
+@chapter Getting started
+
+@menu
+* Turning it on::
+* A first try::
+@end menu
+
+@node Turning it on
+@section Turning it on
+
+@findex multi-region-mode
+@findex global-multi-region-mode
+
+Put the folder of multi-region on your load path and add this to your
+init file:
+
+@lisp
+(require 'multi-region)
+(global-multi-region-mode 1)
+@end lisp
+
+To try it in one buffer only@comma{} use @code{M-x multi-region-mode} instead.
+
+The mode line shows @samp{MR} while the mode is on@comma{} and @samp{MR[3]} when three
+pieces are selected.
+
+@node A first try
+@section A first try
+
+@enumerate
+@item
+Open any text.  Hold @code{Control} and drag the mouse over a word.  It
+stays highlighted.
+@item
+@code{C-drag} over another word@comma{} further on.  Both are highlighted.
+@item
+Press @code{M-w}.  Both words are copied@comma{} one per line@comma{} and deselected.
+@item
+Changed your mind?  @code{C-c M /} selects them again.
+@end enumerate
+
+That is most of it.  The rest of this manual is details.
+
+@node Selecting
+@chapter Selecting
+
+@menu
+* With the mouse::
+* With the keyboard::
+@end menu
+
+@node With the mouse
+@section With the mouse
+
+@findex multi-region-mouse-drag
+
+@multitable {aaaaaaaaaaaaaaaa} {aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}
+@headitem Mouse
+@tab What it does
+@item @code{C-drag}
+@tab Add the dragged text to the selections
+@item @code{C-double-click}
+@tab Add the word under the pointer
+@item @code{C-triple-click}
+@tab Add the line under the pointer
+@item @code{C-click}
+@tab Deselect the selection under the pointer@comma{} or select a picture
+@end multitable
+
+You can start the usual way: drag@comma{} or @code{C-SPC} and move.  As soon as
+you @code{C-drag} somewhere else@comma{} that first region becomes a selection too.
+So ``drag@comma{} then C-drag@comma{} then C-drag'' works as in a word processor.
+
+Selections that touch or overlap become one.
+
+@node With the keyboard
+@section With the keyboard
+
+@findex multi-region-toggle
+@vindex multi-region-thing
+
+@code{C-c M SPC} does what makes sense at point:
+
+@itemize
+@item
+with an active region@comma{} it selects the region;
+@item
+inside a selection@comma{} it deselects it;
+@item
+otherwise@comma{} it selects the picture or the word at point.
+@end itemize
+
+The ``word'' can be something else: see @samp{multi-region-thing} in @ref{Options, , Options}.
+
+@node Using the selections
+@chapter Using the selections
+
+All commands are under the prefix @code{C-c M}.  This manual uses that
+key; if you prefer another@comma{} see @ref{Other keys, , Other keys}.
+
+@multitable {aaaaaaaaa} {aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}
+@headitem Key
+@tab What it does
+@item @code{C-c M w}
+@tab Copy all selections as one piece of text (also @code{M-w})
+@item @code{C-c M k}
+@tab Kill all selections (also @code{C-w})
+@item @code{C-c M r}
+@tab Replace every selection with the same text
+@item @code{C-c M x}
+@tab Run a region command on every selection
+@item @code{C-c M n}
+@tab Jump to the next selection
+@item @code{C-c M p}
+@tab Jump to the previous selection
+@item @code{C-c M u}
+@tab Deselect the most recent selection
+@item @code{C-c M c}
+@tab Deselect everything
+@item @code{C-c M /}
+@tab Bring back what was last deselected all at once
+@item @code{C-c M h}
+@tab Open this manual
+@end multitable
+
+@menu
+* Copying and killing::
+* Changing all selections at once::
+* Moving between selections::
+* Deselecting and bringing back::
+@end menu
+
+@node Copying and killing
+@section Copying and killing
+
+@findex multi-region-copy
+@findex multi-region-kill
+@findex multi-region-kill-ring-save
+@findex multi-region-kill-region
+@vindex multi-region-separator
+@vindex multi-region-keep-after-copy
+
+@code{M-w} and @code{C-w} act on the selections while there are any@comma{} and behave
+as usual when there are none.  You don't have to think about it.
+
+Copied pieces are joined with a newline.  For a different separator just
+this once@comma{} use @code{C-u C-c M w} and type it.  To change it for good@comma{} set
+@samp{multi-region-separator}.
+
+Copying deselects everything@comma{} so you can start fresh.  Set
+@samp{multi-region-keep-after-copy} to keep the selections instead.
+
+A word that a PDF split with a @samp{¬} is joined again: ``inflam¬ mation''
+is copied as ``inflammation''.
+
+@node Changing all selections at once
+@section Changing all selections at once
+
+@findex multi-region-replace
+@findex multi-region-do
+
+@code{C-c M r} asks for a text and puts it in place of every selection.
+
+@code{C-c M x} asks for a command and runs it on each selection as if it were
+the region.  Good ones to try: @samp{upcase-region}@comma{} @samp{comment-region}@comma{}
+@samp{fill-region}.
+
+@code{C-/} (undo) puts the text back after either@comma{} and after @code{C-w}.
+
+@node Moving between selections
+@section Moving between selections
+
+@findex multi-region-next
+@findex multi-region-previous
+
+@code{C-c M n} and @code{C-c M p} move point to the next and previous selection.
+
+@node Deselecting and bringing back
+@section Deselecting and bringing back
+
+@findex multi-region-remove-last
+@findex multi-region-clear
+@findex multi-region-restore
+@findex multi-region-keyboard-quit
+
+@code{C-c M u} deselects the selection you made last.  @code{C-c M c} deselects
+everything.
+
+@code{C-c M /} brings back what was last deselected all at once@comma{} whether by
+@code{C-c M c}@comma{} by copying@comma{} or by @code{C-g} in a PDF or EPUB@.  Selections you
+made since are kept.
+
+@node Pictures
+@chapter Pictures
+
+@vindex multi-region-image-margin
+
+A picture in the buffer is selected whole or not at all.  Drag across it
+with the text around it@comma{} or @code{C-click} it to select it alone.  A selected
+picture gets a band in the selection color; @samp{multi-region-image-margin}
+sets its width@comma{} and 0 turns it off.
+
+This works for pictures in eww and EPUBs@comma{} and for inline images in Org
+(@code{C-c C-x C-v}) and Markdown (@code{C-c C-x C-i}).  In Org and Markdown@comma{} a link
+to a picture file counts even when the picture isn't shown.
+
+Copying takes only the text.  The pictures are for packages that build
+notes from your selections@comma{} such as readq; see @ref{For other packages, , For other packages}.
+
+@node In each kind of buffer
+@chapter In each kind of buffer
+
+@menu
+* Text@comma{} Org@comma{} Markdown and code: Text Org Markdown and code. 
+* eww and other read-only buffers::
+* EPUB books::
+* PDFs (pdf-tools)::
+* PDFs (pdf-canvas)::
+@end menu
+
+@node Text Org Markdown and code
+@section Text@comma{} Org@comma{} Markdown and code
+
+Everything in this manual works.
+
+@node eww and other read-only buffers
+@section eww and other read-only buffers
+
+Selecting@comma{} copying@comma{} jumping and deselecting work.  Killing@comma{} replacing and
+running a command stop with ``Buffer is read-only''@comma{} as they would for an
+ordinary region (killing copies first).
+
+On a link@comma{} @code{C-drag} selects.  A @code{C-click} that selects nothing still
+opens the link in a new window@comma{} as usual.
+
+@node EPUB books
+@section EPUB books
+
+In books opened with nov.el@comma{} selections are remembered for each
+chapter and come back when you return to it.  Copying collects them
+from all chapters@comma{} in reading order.  @code{C-g} deselects everything in every chapter.
+
+@node PDFs (pdf-tools)
+@section PDFs (pdf-tools)
+
+@findex multi-region-pdf-mouse-set-region
+@findex multi-region-pdf-mouse-rectangle
+
+A PDF page is a picture@comma{} so there is no point to move: you select with
+the mouse.
+
+@multitable {aaaaaaaaa} {aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}
+@headitem Mouse
+@tab What it does
+@item drag
+@tab Start over with a new selection on the page
+@item @code{C-drag}
+@tab Add another selection
+@item click
+@tab Nothing: the selections stay
+@item @code{M-drag}
+@tab Select a picture area@comma{} such as a figure
+@item @code{M-click}
+@tab Deselect the picture area under the pointer
+@end multitable
+
+Selections are remembered for each page@comma{} and copying collects them from
+all pages.  @code{C-g} deselects everything on every page.
+
+Copy@comma{} deselect last@comma{} deselect all and bring back work as in text.
+Kill@comma{} replace@comma{} run-command and next/previous don't apply; @code{C-w} copies
+instead of killing.
+
+Highlights follow @samp{pdf-view-selection-style}@comma{} so what you see is
+exactly what is copied.
+
+@node PDFs (pdf-canvas)
+@section PDFs (pdf-canvas)
+
+pdf-canvas keeps several selections itself@comma{} on any number of pages
+(drag@comma{} then @code{C-drag}; @code{M-drag} for a picture area).  multi-region gives
+them the same commands as in a pdf-tools buffer@comma{} and @code{C-g} remembers
+what it deselects@comma{} so @code{C-c M /} can bring it back.
+
+@node Options
+@chapter Options
+
+Change these with @code{M-x customize-group RET multi-region}@comma{} or with
+@samp{setq} in your init file.
+
+@table @asis
+@item @samp{multi-region-separator}
+What goes between copied pieces.  A
+newline by default.
+@item @samp{multi-region-keep-after-copy}
+Keep the selections after copying.
+Off by default.
+@item @samp{multi-region-thing}
+What @code{C-c M SPC} selects at point: @samp{word} (the
+default)@comma{} @samp{symbol}@comma{} @samp{sentence}@comma{} @samp{line}@comma{} or anything @samp{thing-at-point}
+knows.
+@item @samp{multi-region-image-margin}
+Width in pixels of the band around
+selected pictures.  4 by default; 0 for none.
+@item @samp{multi-region-prefix-key}
+The key that leads to the commands.
+@code{C-c M} by default; see @ref{Other keys, , Other keys}.
+@item @samp{multi-region-face}
+How selections look.  Like the region@comma{} by
+default.
+@end table
+
+@menu
+* Other keys::
+@end menu
+
+@node Other keys
+@section Other keys
+
+@vindex multi-region-prefix-key
+@vindex multi-region-mode-map
+@vindex multi-region-command-map
+
+To use @code{C-c s} as the prefix instead of @code{C-c M}:
+
+@lisp
+(setopt multi-region-prefix-key "C-c s")
+@end lisp
+
+@samp{setopt} needs Emacs 29.  On older versions@comma{} use @code{M-x customize-option
+RET multi-region-prefix-key}@comma{} or @samp{setq} it @emph{before} multi-region is
+loaded; a @samp{setq} afterwards does nothing.  Set it to @samp{nil} for no
+prefix at all@comma{} and bind the commands in @samp{multi-region-command-map} to
+keys of your own.
+
+To select with @code{M-S-drag} instead of @code{C-drag}:
+
+@lisp
+(define-key multi-region-mode-map [C-down-mouse-1] nil)
+(define-key multi-region-mode-map [M-S-down-mouse-1] #'multi-region-mouse-drag)
+@end lisp
+
+@node For other packages
+@chapter For other packages
+
+@findex multi-region-selections
+
+@samp{(multi-region-selections &optional absorb)} returns the selections of
+the current buffer in reading order@comma{} without changing them.  With
+@samp{absorb}@comma{} an active region becomes a selection first.  Each selection is
+a property list:
+
+@itemize
+@item
+in text: @samp{(:beg BEG :end END :text TEXT)};
+@item
+in an EPUB@comma{} also @samp{:chapter}@comma{} the chapter number;
+@item
+with pictures@comma{} also @samp{:images}@comma{} each @samp{(:beg BEG :end END :file FILE)}@comma{}
+or @samp{:data} and @samp{:type} for a picture that is not in a file;
+@item
+in a PDF: @samp{(:page PAGE :edges (LEFT TOP RIGHT BOTTOM) :text TEXT)}@comma{}
+edges as fractions of the page.  A picture area also has @samp{:figure t}
+and empty text.
+@end itemize
+
+@samp{(multi-region-clear)} deselects everything.
+
+@node When pdf-tools is updated
+@chapter When pdf-tools is updated
+
+multi-region relies on a few details of how pdf-tools works inside.
+They are all in one file@comma{} @samp{multi-region-pdf-tools.el}@comma{} listed at its
+top.  After updating pdf-tools@comma{} run this in multi-region's folder:
+
+@example
+make test-pdf-tools
+@end example
+
+If something no longer holds@comma{} the test says which@comma{} for example ``breaks
+assumption 2 in multi-region-pdf-tools.el''.  Until it is fixed@comma{} PDF
+selections may not draw or copy correctly; text and EPUB buffers are
+not affected.
+
+@node Command index
+@unnumbered Command index
+
+@printindex fn
+
+@node Option index
+@unnumbered Option index
+
+@printindex vr
+
+@bye
