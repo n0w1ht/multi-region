@@ -91,7 +91,9 @@ with `¬` is joined again ("inflam¬ mation" copies as "inflammation").
 Copying deselects everything, unless `multi-region-keep-after-copy` is on.
 `C-c M /` brings back whatever the last full deselect removed, whether it
 came from `C-c M c`, a copy, or `C-g` in a PDF or EPUB. Selections you made
-since stay selected.
+since stay selected. After `C-c M r` it selects the replacements. After
+`C-w` there is nothing left to select, but once undo (`C-/`) has put the
+text back, `C-c M /` selects it again.
 
 ## Pictures
 

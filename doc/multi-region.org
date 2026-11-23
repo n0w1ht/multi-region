@@ -155,6 +155,13 @@ everything.
 ~C-c M c~, by copying, or by ~C-g~ in a PDF or EPUB.  Selections you
 made since are kept.
 
+It works after changing the text too:
+
+- after ~C-c M r~, it selects the replacements, so you can carry on
+  with them;
+- after ~C-w~, undo first (~C-/~) to put the text back, then ~C-c M /~
+  selects it again.
+
 * Pictures
 #+vindex: multi-region-image-margin
 

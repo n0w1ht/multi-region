@@ -328,7 +328,9 @@ it and SELECTIONS in the form that viewer keeps them.")
 (defun multi-region-restore ()
   "Select again what was deselected all at once, last time.
 That is everything that \\[multi-region-clear], \\[keyboard-quit] in a
-PDF or EPUB, or copying cleared.  Selections made since are kept."
+PDF or EPUB, or copying cleared.  After \\[multi-region-replace], it
+selects the replacements; after \\[multi-region-kill], once \\[undo]
+has put the text back, that text.  Selections made since are kept."
   (interactive)
   (let ((saved multi-region--cleared)
         (before (multi-region--count)))
@@ -391,7 +393,8 @@ and on other pages.  Afterwards everything is deselected unless
 
 (defun multi-region-kill ()
   "Kill all selections: copy them as one string, then delete them.
-An active region counts as one more selection."
+An active region counts as one more selection.  After \[undo] puts
+the text back, \[multi-region-restore] selects it again."
   (interactive)
   (multi-region--assert-text)
   (multi-region--absorb-region)
@@ -402,12 +405,15 @@ An active region counts as one more selection."
                          multi-region-separator))
     ;; As with `kill-region', read-only text is copied before the error.
     (barf-if-buffer-read-only)
+    (setq multi-region--cleared (cons 'text (multi-region--text-snapshot t)))
     (dolist (ov (reverse ovs))
       (delete-region (overlay-start ov) (overlay-end ov)))
     (multi-region--reset)))
 
 (defun multi-region-replace (string)
-  "Replace the text of every selection with STRING."
+  "Replace the text of every selection with STRING.
+Afterwards \[multi-region-restore] selects the replacements; after
+\[undo], the text they replaced."
   (interactive
    (progn
      (multi-region--assert-text)
@@ -417,6 +423,7 @@ An active region counts as one more selection."
   (let ((ovs (multi-region--sorted)))
     (unless ovs
       (user-error "No selections"))
+    (setq multi-region--cleared (cons 'text (multi-region--text-snapshot t)))
     (save-excursion
       (dolist (ov (reverse ovs))
         (let ((beg (overlay-start ov))

@@ -279,6 +279,17 @@ everything.
 @code{C-c M c}@comma{} by copying@comma{} or by @code{C-g} in a PDF or EPUB@.  Selections you
 made since are kept.
 
+It works after changing the text too:
+
+@itemize
+@item
+after @code{C-c M r}@comma{} it selects the replacements@comma{} so you can carry on
+with them;
+@item
+after @code{C-w}@comma{} undo first (@code{C-/}) to put the text back@comma{} then @code{C-c M /}
+selects it again.
+@end itemize
+
 @node Pictures
 @chapter Pictures
 

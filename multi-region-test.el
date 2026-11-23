@@ -200,6 +200,56 @@
       ;; A click on plain text does neither.
       (should-not (multi-region--track-drag (selected-window) 2 0)))))
 
+(ert-deftest multi-region-test-restore-after-replace ()
+  (with-temp-buffer
+    (insert "I love ClaudeAI very much")
+    (multi-region-mode 1)
+    (multi-region--add 3 7)              ; "love"
+    (multi-region--add 22 26)            ; "much"
+    (multi-region-replace "like")
+    (should (equal (buffer-string) "I like ClaudeAI very like"))
+    (should (= (multi-region--count) 0))
+    ;; The replacements are selected again.
+    (multi-region-restore)
+    (should (equal (mapcar (lambda (s) (plist-get s :text)) (multi-region-selections))
+                   '("like" "like")))))
+
+(ert-deftest multi-region-test-restore-after-kill-and-undo ()
+  (with-temp-buffer
+    (buffer-enable-undo)
+    (insert "I love ClaudeAI very much")
+    (undo-boundary)
+    (multi-region-mode 1)
+    (multi-region--add 3 7)              ; "love"
+    (multi-region--add 22 26)            ; "much"
+    (let ((kill-ring nil))
+      (multi-region-kill))
+    (should (equal (buffer-string) "I  ClaudeAI very "))
+    (undo-boundary)
+    (let ((last-command nil))
+      (undo))
+    (should (equal (buffer-string) "I love ClaudeAI very much"))
+    ;; The text undo put back is selected again.
+    (multi-region-restore)
+    (should (equal (mapcar (lambda (s) (plist-get s :text)) (multi-region-selections))
+                   '("love" "much")))))
+
+(ert-deftest multi-region-test-read-only-kill-keeps-snapshot ()
+  ;; A kill that stops at read-only text deletes nothing, so what was
+  ;; last cleared can still be brought back.
+  (with-temp-buffer
+    (insert "I love ClaudeAI very much")
+    (multi-region-mode 1)
+    (multi-region--add 3 7)              ; "love"
+    (multi-region-clear)
+    (multi-region--add 22 26)            ; "much"
+    (setq buffer-read-only t)
+    (let ((kill-ring nil))
+      (should-error (multi-region-kill) :type 'buffer-read-only))
+    (multi-region-restore)
+    (should (equal (mapcar (lambda (s) (plist-get s :text)) (multi-region-selections))
+                   '("love" "much")))))
+
 (ert-deftest multi-region-test-prefix-key ()
   (unwind-protect
       (with-temp-buffer

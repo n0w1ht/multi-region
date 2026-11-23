@@ -108,11 +108,14 @@ one.  Return the new overlay, or nil if the text is empty."
   "Return the number of selections in a text buffer."
   (length (multi-region--live)))
 
-(defun multi-region--text-snapshot ()
-  "Return the selections of a text buffer as (BEG . END) marker pairs."
+(defun multi-region--text-snapshot (&optional deleting)
+  "Return the selections of a text buffer as (BEG . END) marker pairs.
+DELETING non-nil means the selections are about to be deleted: then
+text inserted where one was counts as part of it, be it what replaces
+it or the text itself, put back by undo."
   (mapcar (lambda (ov)
             (cons (copy-marker (overlay-start ov))
-                  (copy-marker (overlay-end ov))))
+                  (copy-marker (overlay-end ov) deleting)))
           (multi-region--sorted)))
 
 (defun multi-region--text-bring-back (pairs)

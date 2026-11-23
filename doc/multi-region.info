@@ -240,6 +240,13 @@ everything.
 by ‘C-c M c’, by copying, or by ‘C-g’ in a PDF or EPUB.  Selections you
 made since are kept.
 
+   It works after changing the text too:
+
+   • after ‘C-c M r’, it selects the replacements, so you can carry on
+     with them;
+   • after ‘C-w’, undo first (‘C-/’) to put the text back, then ‘C-c M
+     /’ selects it again.
+
 
 File: multi-region.info,  Node: Pictures,  Next: In each kind of buffer,  Prev: Using the selections,  Up: Top
 
@@ -500,19 +507,19 @@ Node: Copying and killing5261
 Node: Changing all selections at once5995
 Node: Moving between selections6545
 Node: Deselecting and bringing back6852
-Node: Pictures7315
-Node: In each kind of buffer8101
-Node: Text Org Markdown and code8417
-Node: eww and other read-only buffers8649
-Node: EPUB books9182
-Node: PDFs (pdf-tools)9573
-Node: PDFs (pdf-canvas)10557
-Node: Options10985
-Node: Other keys11946
-Node: For other packages12669
-Node: When pdf-tools is updated13566
-Node: Command index14204
-Node: Option index16328
+Node: Pictures7562
+Node: In each kind of buffer8348
+Node: Text Org Markdown and code8664
+Node: eww and other read-only buffers8896
+Node: EPUB books9429
+Node: PDFs (pdf-tools)9820
+Node: PDFs (pdf-canvas)10804
+Node: Options11232
+Node: Other keys12193
+Node: For other packages12916
+Node: When pdf-tools is updated13813
+Node: Command index14451
+Node: Option index16575
 
 End Tag Table
 
