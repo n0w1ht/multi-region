@@ -247,6 +247,12 @@ made since are kept.
    • after ‘C-w’, undo first (‘C-/’) to put the text back, then ‘C-c M
      /’ selects it again.
 
+   The last five such sets are kept, each buffer its own.  Press ‘C-c M
+/’ again right away (or just ‘/’ with ‘repeat-mode’ on) to swap what
+came back for the set deselected before it, and again for the one before
+that.  ‘C-u C-c M /’ lists them, with how many selections, what
+deselected them, when, and how their text starts, so you can pick one.
+
 
 File: multi-region.info,  Node: Pictures,  Next: In each kind of buffer,  Prev: Using the selections,  Up: Top
 
@@ -377,6 +383,8 @@ in your init file.
      C-drag keeps its own meaning there: Dired, Magit, Ibuffer and
      terminal buffers by default.  ‘M-x multi-region-mode’ still turns
      it on in one of them.
+‘multi-region-restore-history’
+     How many deselected sets ‘C-c M /’ can bring back.  5 by default.
 ‘multi-region-face’
      How selections look.  Like the region, by default.
 
@@ -495,6 +503,7 @@ Option index
 * multi-region-keep-after-copy:          Copying and killing.   (line 6)
 * multi-region-mode-map:                 Other keys.            (line 6)
 * multi-region-prefix-key:               Other keys.            (line 6)
+* multi-region-restore-history:          Options.               (line 6)
 * multi-region-separator:                Copying and killing.   (line 6)
 * multi-region-thing:                    With the keyboard.     (line 6)
 
@@ -513,19 +522,19 @@ Node: Copying and killing5259
 Node: Changing all selections at once5993
 Node: Moving between selections6543
 Node: Deselecting and bringing back6850
-Node: Pictures7560
-Node: In each kind of buffer8346
-Node: Text Org Markdown and code8662
-Node: eww and other read-only buffers8894
-Node: EPUB books9427
-Node: PDFs (pdf-tools)9818
-Node: PDFs (pdf-canvas)10802
-Node: Options11230
-Node: Other keys12466
-Node: For other packages13189
-Node: When pdf-tools is updated14086
-Node: Command index14724
-Node: Option index16848
+Node: Pictures7926
+Node: In each kind of buffer8712
+Node: Text Org Markdown and code9028
+Node: eww and other read-only buffers9260
+Node: EPUB books9793
+Node: PDFs (pdf-tools)10184
+Node: PDFs (pdf-canvas)11168
+Node: Options11596
+Node: Other keys12942
+Node: For other packages13665
+Node: When pdf-tools is updated14562
+Node: Command index15200
+Node: Option index17324
 
 End Tag Table
 

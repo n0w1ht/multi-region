@@ -10,6 +10,10 @@
 - New option `multi-region-prefix-key` (`C-c M` by default).
 - `C-c M /` also works after kill and replace: after a replace it
   selects the replacements, after a kill and `undo` the text put back.
+- `C-c M /` keeps the last five deselected sets, not just one: press it
+  again right away (just `/` with `repeat-mode`) for the set before, or
+  `C-u C-c M /` to pick one from a list.  New option
+  `multi-region-restore-history`.
 - New option `multi-region-ignored-modes`: `global-multi-region-mode`
   now stays off in Dired, Magit, Ibuffer and terminal buffers, so C-drag
   keeps its own meaning there.

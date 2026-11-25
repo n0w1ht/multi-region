@@ -93,7 +93,9 @@ Copying deselects everything, unless `multi-region-keep-after-copy` is on.
 came from `C-c M c`, a copy, or `C-g` in a PDF or EPUB. Selections you made
 since stay selected. After `C-c M r` it selects the replacements. After
 `C-w` there is nothing left to select, but once undo (`C-/`) has put the
-text back, `C-c M /` selects it again.
+text back, `C-c M /` selects it again. The last five sets are kept: press
+`C-c M /` again right away (just `/` with `repeat-mode`) for the set before,
+or `C-u C-c M /` to pick one from a list.
 
 ## Pictures
 
@@ -164,6 +166,7 @@ Set these with `M-x customize-group RET multi-region` or `setq`:
 | `multi-region-keep-after-copy`  | `nil`   | Keep the selections after copying them                         |
 | `multi-region-prefix-key`       | `"C-c M"` | Key that leads to the commands; `nil` for none               |
 | `multi-region-ignored-modes`   | Dired, Magit, terminals | Major modes where `global-multi-region-mode` stays off       |
+| `multi-region-restore-history`  | `5`     | How many deselected sets `C-c M /` can bring back              |
 | `multi-region-face`             | `region`| Face of the selections                                         |
 | `multi-region-image-margin`     | `4`     | Width in pixels of the band around selected pictures; 0 for none |
 

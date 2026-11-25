@@ -290,6 +290,12 @@ after @code{C-w}@comma{} undo first (@code{C-/}) to put the text back@comma{} th
 selects it again.
 @end itemize
 
+The last five such sets are kept@comma{} each buffer its own.  Press @code{C-c M
+/} again right away (or just @code{/} with @samp{repeat-mode} on) to swap what
+came back for the set deselected before it@comma{} and again for the one
+before that.  @code{C-u C-c M /} lists them@comma{} with how many selections@comma{} what
+deselected them@comma{} when@comma{} and how their text starts@comma{} so you can pick one.
+
 @node Pictures
 @chapter Pictures
 
@@ -386,6 +392,7 @@ what it deselects@comma{} so @code{C-c M /} can bring it back.
 @chapter Options
 
 @vindex multi-region-ignored-modes
+@vindex multi-region-restore-history
 
 Change these with @code{M-x customize-group RET multi-region}@comma{} or with
 @samp{setq} in your init file.
@@ -412,6 +419,9 @@ Major modes where
 @samp{global-multi-region-mode} stays off@comma{} so that C-drag keeps its own
 meaning there: Dired@comma{} Magit@comma{} Ibuffer and terminal buffers by default.
 @code{M-x multi-region-mode} still turns it on in one of them.
+@item @samp{multi-region-restore-history}
+How many deselected sets @code{C-c M /}
+can bring back.  5 by default.
 @item @samp{multi-region-face}
 How selections look.  Like the region@comma{} by
 default.

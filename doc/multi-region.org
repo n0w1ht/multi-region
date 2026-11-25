@@ -162,6 +162,12 @@ It works after changing the text too:
 - after ~C-w~, undo first (~C-/~) to put the text back, then ~C-c M /~
   selects it again.
 
+The last five such sets are kept, each buffer its own.  Press ~C-c M
+/~ again right away (or just ~/~ with ~repeat-mode~ on) to swap what
+came back for the set deselected before it, and again for the one
+before that.  ~C-u C-c M /~ lists them, with how many selections, what
+deselected them, when, and how their text starts, so you can pick one.
+
 * Pictures
 #+vindex: multi-region-image-margin
 
@@ -232,6 +238,7 @@ what it deselects, so ~C-c M /~ can bring it back.
 
 * Options
 #+vindex: multi-region-ignored-modes
+#+vindex: multi-region-restore-history
 
 Change these with ~M-x customize-group RET multi-region~, or with
 =setq= in your init file.
@@ -251,6 +258,8 @@ Change these with ~M-x customize-group RET multi-region~, or with
   =global-multi-region-mode= stays off, so that C-drag keeps its own
   meaning there: Dired, Magit, Ibuffer and terminal buffers by default.
   ~M-x multi-region-mode~ still turns it on in one of them.
+- =multi-region-restore-history= :: How many deselected sets ~C-c M /~
+  can bring back.  5 by default.
 - =multi-region-face= :: How selections look.  Like the region, by
   default.
 
