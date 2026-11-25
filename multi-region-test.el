@@ -262,5 +262,111 @@
         (should-not (eq (key-binding (kbd "C-c s w")) 'multi-region-copy)))
     (customize-set-variable 'multi-region-prefix-key "C-c M")))
 
+;;;; Global mode and docstrings
+
+(define-derived-mode multi-region-test-dired-like-mode special-mode "DiredLike")
+
+(ert-deftest multi-region-test-global-mode-skips-ignored-modes ()
+  (let ((multi-region-ignored-modes '(multi-region-test-dired-like-mode)))
+    (with-temp-buffer
+      (multi-region-test-dired-like-mode)
+      (multi-region--turn-on)
+      (should-not multi-region-mode))
+    (with-temp-buffer
+      (text-mode)
+      (multi-region--turn-on)
+      (should multi-region-mode))))
+
+(ert-deftest multi-region-test-docstrings-name-keys ()
+  ;; A single backslash before [command] shows the brackets literally.
+  (dolist (fn '(multi-region-kill multi-region-replace multi-region-restore
+                multi-region-clear))
+    (should-not (string-match-p "\\[\\(?:undo\\|multi-region-[a-z-]+\\)\\]"
+                                (documentation fn)))))
+
+(ert-deftest multi-region-test-nov-advice-removed-when-off ()
+  (with-temp-buffer
+    (cl-letf (((symbol-function 'multi-region--nov-p) (lambda () t)))
+      (multi-region-mode 1)
+      (should (advice-member-p #'multi-region--nov-around-render
+                               'nov-render-document))
+      (multi-region-mode -1)
+      (should-not (advice-member-p #'multi-region--nov-around-render
+                                   'nov-render-document)))))
+
+;;;; Several sets to bring back
+
+(defun multi-region-test--texts ()
+  (mapcar (lambda (s) (plist-get s :text)) (multi-region-selections)))
+
+(ert-deftest multi-region-test-restore-history ()
+  (with-temp-buffer
+    (insert "I love ClaudeAI very much")
+    (multi-region-mode 1)
+    ;; Copy two selections, then select another and press C-g.
+    (multi-region--add 3 7)              ; "love"
+    (multi-region--add 22 26)            ; "much"
+    (let ((kill-ring nil)) (multi-region-copy))
+    (multi-region--add 8 16)             ; "ClaudeAI"
+    (cl-letf (((symbol-function 'keyboard-quit) #'ignore))
+      (multi-region-keyboard-quit))
+    (should (= (length multi-region--history) 2))
+    ;; The newest comes back first...
+    (multi-region-restore)
+    (should (equal (multi-region-test--texts) '("ClaudeAI")))
+    ;; ...and pressing again right away swaps it for the one before.
+    (let ((last-command 'multi-region-restore))
+      (multi-region-restore))
+    (should (equal (multi-region-test--texts) '("love" "much")))
+    (let ((last-command 'multi-region-restore))
+      (should-error (multi-region-restore) :type 'user-error))
+    ;; The one passed over is kept, newest first.
+    (should (equal (mapcar (lambda (e) (plist-get e :reason)) multi-region--history)
+                   '("C-g")))
+    (multi-region-restore)
+    (should (equal (multi-region-test--texts) '("love" "ClaudeAI" "much")))
+    (should-not multi-region--history)))
+
+(ert-deftest multi-region-test-restore-walk-keeps-new-selections ()
+  (with-temp-buffer
+    (insert "one two three four five")
+    (multi-region-mode 1)
+    (dolist (r '((1 . 4) (5 . 8) (9 . 14)))   ; "one", "two", "three"
+      (multi-region--add (car r) (cdr r))
+      (multi-region-clear))
+    (multi-region--add 15 19)            ; "four", selected now
+    (multi-region-restore)
+    (should (equal (multi-region-test--texts) '("three" "four")))
+    (let ((last-command 'multi-region-restore))
+      (multi-region-restore))
+    (should (equal (multi-region-test--texts) '("two" "four")))
+    (let ((last-command 'multi-region-restore))
+      (multi-region-restore))
+    (should (equal (multi-region-test--texts) '("one" "four")))
+    ;; Those passed over are back in the history, in their order.
+    (should (equal (mapcar (lambda (e) (plist-get e :preview)) multi-region--history)
+                   '("three" "two")))))
+
+(ert-deftest multi-region-test-restore-history-limit-and-choose ()
+  (with-temp-buffer
+    (insert "one two three four five")
+    (multi-region-mode 1)
+    (let ((multi-region-restore-history 3))
+      (dolist (r '((1 . 4) (5 . 8) (9 . 14) (15 . 19)))
+        (multi-region--add (car r) (cdr r))
+        (multi-region-clear)))
+    (should (equal (mapcar (lambda (e) (plist-get e :preview)) multi-region--history)
+                   '("four" "three" "two")))
+    ;; With a prefix argument, pick one from a list.
+    (cl-letf (((symbol-function 'completing-read)
+               (lambda (_prompt table &rest _)
+                 (let ((all (all-completions "" table)))
+                   (should (string-match-p "1 selection, clear, just now: four"
+                                           (car all)))
+                   (nth 2 all)))))
+      (multi-region-restore '(4)))
+    (should (equal (multi-region-test--texts) '("two")))
+    (should (= (length multi-region--history) 2))))
+
 (provide 'multi-region-test)
 ;;; multi-region-test.el ends here

@@ -1,6 +1,6 @@
 ;;; multi-region.el --- Select several separate regions at once  -*- lexical-binding: t; -*-
 
-;; Version: 0.5.0
+;; Version: 0.6.0
 ;; Package-Requires: ((emacs "27.1"))
 ;; Keywords: convenience, mouse
 
@@ -44,7 +44,8 @@
 ;;   C-c M n/p   jump to the next/previous selection
 ;;   C-c M u     deselect the most recent selection
 ;;   C-c M c     deselect everything
-;;   C-c M /     bring back what was last deselected all at once
+;;   C-c M /     bring back what was last deselected all at once;
+;;               again for the set before, C-u to pick from a list
 ;;   C-c M h     open the manual (also C-h R multi-region)
 ;;
 ;; M-w and C-w only change behavior while selections exist.  Copied
@@ -148,6 +149,13 @@ This can be any symbol that `bounds-of-thing-at-point' accepts."
   "Non-nil means selections stay selected after they are copied."
   :type 'boolean)
 
+(defcustom multi-region-restore-history 5
+  "How many deselected sets of selections each buffer remembers.
+\\[multi-region-restore] brings back the newest; pressed again right
+away, the one before.  Each clear, copy, kill or replace that
+deselects something adds one."
+  :type 'natnum)
+
 ;;;; The manual
 
 (defconst multi-region--doc-directory
@@ -220,7 +228,7 @@ Such a buffer has no text to move point over."
 
 (defun multi-region--absorb-region ()
   "Turn the active region, if there is one, into a selection."
-  (when (and (not (multi-region--pdf-p)) (use-region-p))
+  (when (and (not (multi-region--paged-p)) (use-region-p))
     ;; `region-bounds' also covers rectangles, one piece per line.
     (let ((bounds (region-bounds)))
       (deactivate-mark)
@@ -298,13 +306,26 @@ point, a word by default."
           (user-error "Nothing to select here"))
         (multi-region--add (car bounds) (cdr bounds)))))))
 
-(defvar-local multi-region--cleared nil
-  "What `multi-region-clear' last deselected, for `multi-region-restore'.
-A cons (VIEWER . SELECTIONS), VIEWER as `multi-region--viewer' returns
-it and SELECTIONS in the form that viewer keeps them.")
+(defvar-local multi-region--history nil
+  "What was deselected all at once, newest first, for `multi-region-restore'.
+Each entry is a plist:
+
+:viewer      what showed the buffer, as `multi-region--viewer' says
+:selections  the selections, in the form that viewer keeps them
+:count       how many there were
+:reason      what deselected them, such as \"copy\" or \"C-g\"
+:preview     the start of their text, to tell entries apart
+:time        when, as `float-time' returns it")
+
+(defvar-local multi-region--restore-chain nil
+  "Where a run of \\[multi-region-restore] presses stands.
+A plist (:base BASE :current ENTRY :index N): BASE is the entry of
+what was selected before the run started, or nil; ENTRY is the
+history entry on display, taken out of `multi-region--history'; N is
+where it was there.")
 
 (defun multi-region--snapshot ()
-  "Return the selections of this buffer in the form of `multi-region--cleared'."
+  "Return the selections of this buffer as (VIEWER . SELECTIONS)."
   (let ((viewer (multi-region--viewer)))
     (cons viewer
           (pcase viewer
@@ -313,38 +334,157 @@ it and SELECTIONS in the form that viewer keeps them.")
             ('epub (multi-region--nov-snapshot))
             (_ (multi-region--text-snapshot))))))
 
+(defun multi-region--preview (texts)
+  "Return a short line showing the start of TEXTS, a list of strings."
+  (truncate-string-to-width
+   (replace-regexp-in-string "[ \t\n\r]+" " "
+                             (mapconcat #'identity texts " | "))
+   60 nil nil "…"))
+
+(defun multi-region--remember (snapshot reason &optional texts)
+  "Add SNAPSHOT, from `multi-region--snapshot', to the history.
+REASON says what deselected it.  TEXTS are its strings, if known."
+  (let ((texts (or texts (ignore-errors (multi-region--texts)))))
+    (push (list :viewer (car snapshot)
+                :selections (cdr snapshot)
+                :count (multi-region--count)
+                :reason reason
+                :preview (multi-region--preview texts)
+                :time (float-time))
+          multi-region--history))
+  (setq multi-region--restore-chain nil)
+  (let ((keep (max 1 multi-region-restore-history)))
+    (when (> (length multi-region--history) keep)
+      (setcdr (nthcdr (1- keep) multi-region--history) nil))))
+
+(defun multi-region--clear-now ()
+  "Deselect everything in the current buffer, remembering nothing."
+  (pcase (multi-region--viewer)
+    ('canvas (multi-region--reset)
+             (pdf-canvas-clear-selections))
+    ('pdf (multi-region--pdf-clear))
+    (_ (multi-region--reset))))
+
+(defun multi-region--clear (reason)
+  "Deselect everything, remembering it under REASON if anything was selected."
+  (when (multi-region--any-p)
+    (multi-region--remember (multi-region--snapshot) reason))
+  (multi-region--clear-now))
+
 (defun multi-region-clear ()
   "Deselect everything in the current buffer.
 \\[multi-region-restore] brings it back."
   (interactive)
-  (let ((rects multi-region--pdf-rects))
-    (when (multi-region--any-p)
-      (setq multi-region--cleared (multi-region--snapshot)))
-    (multi-region--reset)
-    (pcase (multi-region--viewer)
-      ('canvas (pdf-canvas-clear-selections))
-      ('pdf (multi-region--pdf-clear rects)))))
+  (multi-region--clear "clear"))
 
-(defun multi-region-restore ()
-  "Select again what was deselected all at once, last time.
+(defun multi-region--bring-back (viewer selections)
+  "Select again SELECTIONS, kept the way VIEWER keeps them."
+  (pcase viewer
+    ('canvas (multi-region--canvas-bring-back selections))
+    ('pdf (multi-region--pdf-bring-back selections))
+    ('epub (multi-region--nov-bring-back selections))
+    (_ (multi-region--text-bring-back selections))))
+
+(defun multi-region--ago (time)
+  "Return how long ago TIME was, in words."
+  (let ((s (- (float-time) time)))
+    (cond ((< s 60) "just now")
+          ((< s 3600) (format "%d min ago" (/ s 60)))
+          ((< s 86400) (format "%d h ago" (/ s 3600)))
+          (t (format "%d days ago" (/ s 86400))))))
+
+(defun multi-region--describe (entry)
+  "Return a line describing the history ENTRY."
+  (let ((n (plist-get entry :count)))
+    (format "%d selection%s, %s, %s: %s"
+            n (if (= n 1) "" "s")
+            (plist-get entry :reason)
+            (multi-region--ago (plist-get entry :time))
+            (plist-get entry :preview))))
+
+(defun multi-region--choose-entry (entries)
+  "Ask for one of the history ENTRIES and return its index."
+  (let* ((i 0)
+         (choices (mapcar (lambda (e)
+                            (setq i (1+ i))
+                            (cons (format "%d. %s" i (multi-region--describe e))
+                                  (1- i)))
+                          entries))
+         (choice (completing-read "Bring back: "
+                                  (lambda (string pred action)
+                                    (if (eq action 'metadata)
+                                        '(metadata (display-sort-function . identity))
+                                      (complete-with-action
+                                       action choices string pred)))
+                                  nil t)))
+    (cdr (assoc choice choices))))
+
+(defun multi-region-restore (&optional choose)
+  "Select again what was last deselected all at once.
 That is everything that \\[multi-region-clear], \\[keyboard-quit] in a
 PDF or EPUB, or copying cleared.  After \\[multi-region-replace], it
 selects the replacements; after \\[multi-region-kill], once \\[undo]
-has put the text back, that text.  Selections made since are kept."
-  (interactive)
-  (let ((saved multi-region--cleared)
-        (before (multi-region--count)))
-    (unless (eq (car saved) (multi-region--viewer))
-      (user-error "Nothing to bring back"))
-    (pcase (car saved)
-      ('canvas (multi-region--canvas-bring-back (cdr saved)))
-      ('pdf (multi-region--pdf-bring-back (cdr saved)))
-      ('epub (multi-region--nov-bring-back (cdr saved)))
-      (_ (multi-region--text-bring-back (cdr saved))))
-    (setq multi-region--cleared nil)
-    (force-mode-line-update)
-    (let ((n (- (multi-region--count) before)))
-      (message "Brought back %d selection%s" n (if (= n 1) "" "s")))))
+has put the text back, that text.  Selections made since are kept.
+
+Pressed again right away (with `repeat-mode' on, / is enough), it brings
+back the set deselected before that one instead, and so on, as far as
+`multi-region-restore-history' goes.  With a prefix argument CHOOSE,
+pick the set from a list."
+  (interactive "P")
+  (let* ((viewer (multi-region--viewer))
+         (chain (and (eq last-command 'multi-region-restore)
+                     (not choose)
+                     multi-region--restore-chain))
+         (history multi-region--history)
+         (index (cond (choose
+                       (unless history (user-error "Nothing to bring back"))
+                       (multi-region--choose-entry history))
+                      (chain (plist-get chain :index))
+                      (t 0)))
+         (entry (nth index history))
+         base)
+    (unless (and entry (eq (plist-get entry :viewer) viewer))
+      (user-error (if chain "No older selections to bring back"
+                    "Nothing to bring back")))
+    (setq multi-region--history (delq entry multi-region--history))
+    (if chain
+        (progn
+          ;; Put back the set brought back last, where it was, and
+          ;; show this one instead, next to what was selected before.
+          (setq base (plist-get chain :base))
+          (let ((current (plist-get chain :current)))
+            (if (= index 0)
+                (push current multi-region--history)
+              (let ((cell (nthcdr (1- index) multi-region--history)))
+                (setcdr cell (cons current (cdr cell))))))
+          (multi-region--clear-now)
+          (when base
+            (multi-region--bring-back viewer (cdr base))))
+      (when (multi-region--any-p)
+        (setq base (multi-region--snapshot))))
+    (let ((before (multi-region--count)))
+      (multi-region--bring-back viewer (plist-get entry :selections))
+      ;; The next press takes the entry after this one.  It is at
+      ;; INDEX now that this one is out, or one further on after
+      ;; the entry shown before was put back in front of it.
+      (let ((next (if chain (1+ index) index)))
+        (setq multi-region--restore-chain
+              (list :base base :current entry :index next)))
+      (force-mode-line-update)
+      (let ((n (- (multi-region--count) before))
+            (older (nth (plist-get multi-region--restore-chain :index)
+                        multi-region--history)))
+        (message "Brought back %d selection%s (%s)%s"
+                 n (if (= n 1) "" "s")
+                 (plist-get entry :reason)
+                 (if older "; again for older ones" ""))))))
+
+(defvar multi-region-restore-repeat-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map "/" #'multi-region-restore)
+    map)
+  "Keys that repeat `multi-region-restore' under `repeat-mode'.")
+(put 'multi-region-restore 'repeat-map 'multi-region-restore-repeat-map)
 
 (defun multi-region-remove-last ()
   "Deselect the most recently added selection.
@@ -360,7 +500,7 @@ added on the page on display."
   "Deselect everything, on all PDF pages or EPUB chapters, then quit.
 \\[keyboard-quit] runs this in PDF and EPUB buffers."
   (interactive)
-  (multi-region-clear)
+  (multi-region--clear "C-g")
   (if (multi-region--canvas-p)
       ;; Also removes the search highlights, then quits.
       (pdf-canvas-quit)
@@ -387,33 +527,34 @@ and on other pages.  Afterwards everything is deselected unless
     (kill-new (mapconcat #'identity texts
                          (or separator multi-region-separator)))
     (unless multi-region-keep-after-copy
-      (multi-region-clear))
+      (multi-region--clear "copy"))
     (message "Copied %d selection%s"
              (length texts) (if (cdr texts) "s" ""))))
 
 (defun multi-region-kill ()
   "Kill all selections: copy them as one string, then delete them.
-An active region counts as one more selection.  After \[undo] puts
-the text back, \[multi-region-restore] selects it again."
+An active region counts as one more selection.  After \\[undo] puts
+the text back, \\[multi-region-restore] selects it again."
   (interactive)
   (multi-region--assert-text)
   (multi-region--absorb-region)
   (let ((ovs (multi-region--sorted)))
     (unless ovs
       (user-error "No selections"))
-    (kill-new (mapconcat #'identity (multi-region--texts)
-                         multi-region-separator))
-    ;; As with `kill-region', read-only text is copied before the error.
-    (barf-if-buffer-read-only)
-    (setq multi-region--cleared (cons 'text (multi-region--text-snapshot t)))
+    (let ((texts (multi-region--texts)))
+      (kill-new (mapconcat #'identity texts multi-region-separator))
+      ;; As with `kill-region', read-only text is copied before the error.
+      (barf-if-buffer-read-only)
+      (multi-region--remember (cons 'text (multi-region--text-snapshot t))
+                              "kill" texts))
     (dolist (ov (reverse ovs))
       (delete-region (overlay-start ov) (overlay-end ov)))
     (multi-region--reset)))
 
 (defun multi-region-replace (string)
   "Replace the text of every selection with STRING.
-Afterwards \[multi-region-restore] selects the replacements; after
-\[undo], the text they replaced."
+Afterwards \\[multi-region-restore] selects the replacements; after
+\\[undo], the text they replaced."
   (interactive
    (progn
      (multi-region--assert-text)
@@ -423,7 +564,8 @@ Afterwards \[multi-region-restore] selects the replacements; after
   (let ((ovs (multi-region--sorted)))
     (unless ovs
       (user-error "No selections"))
-    (setq multi-region--cleared (cons 'text (multi-region--text-snapshot t)))
+    (multi-region--remember (cons 'text (multi-region--text-snapshot t))
+                            "replace")
     (save-excursion
       (dolist (ov (reverse ovs))
         (let ((beg (overlay-start ov))
@@ -604,11 +746,24 @@ deselects them.
    (t
     (remove-hook 'change-major-mode-hook #'multi-region--reset t)
     (multi-region--pdf-teardown)
+    (multi-region--nov-teardown)
     (multi-region--reset))))
 
+(defcustom multi-region-ignored-modes
+  '(dired-mode magit-section-mode ibuffer-mode
+    vterm-mode eat-mode term-mode eshell-mode)
+  "Major modes in which `global-multi-region-mode' leaves the mode off.
+Modes derived from them count too.  In these buffers C-drag and
+\\[kill-ring-save] keep doing what the major mode makes them do.
+`multi-region-mode' can still be turned on by hand there."
+  :type '(repeat symbol)
+  :group 'multi-region)
+
 (defun multi-region--turn-on ()
-  "Turn on `multi-region-mode', except in the minibuffer."
-  (unless (minibufferp)
+  "Turn on `multi-region-mode', except where it does not belong.
+That is the minibuffer and buffers in `multi-region-ignored-modes'."
+  (unless (or (minibufferp)
+              (apply #'derived-mode-p multi-region-ignored-modes))
     (multi-region-mode 1)))
 
 ;;;###autoload

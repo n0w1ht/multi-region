@@ -14,7 +14,7 @@
 @finalout
 @titlepage
 @title multi-region: select several pieces of text at once
-@subtitle for version 0.5.0
+@subtitle for version 0.6.0
 @author Hormoz Zamanpour Siahkal
 @end titlepage
 
@@ -290,6 +290,12 @@ after @code{C-w}@comma{} undo first (@code{C-/}) to put the text back@comma{} th
 selects it again.
 @end itemize
 
+The last five such sets are kept@comma{} each buffer its own.  Press @code{C-c M
+/} again right away (or just @code{/} with @samp{repeat-mode} on) to swap what
+came back for the set deselected before it@comma{} and again for the one
+before that.  @code{C-u C-c M /} lists them@comma{} with how many selections@comma{} what
+deselected them@comma{} when@comma{} and how their text starts@comma{} so you can pick one.
+
 @node Pictures
 @chapter Pictures
 
@@ -385,6 +391,9 @@ what it deselects@comma{} so @code{C-c M /} can bring it back.
 @node Options
 @chapter Options
 
+@vindex multi-region-ignored-modes
+@vindex multi-region-restore-history
+
 Change these with @code{M-x customize-group RET multi-region}@comma{} or with
 @samp{setq} in your init file.
 
@@ -405,6 +414,14 @@ selected pictures.  4 by default; 0 for none.
 @item @samp{multi-region-prefix-key}
 The key that leads to the commands.
 @code{C-c M} by default; see @ref{Other keys, , Other keys}.
+@item @samp{multi-region-ignored-modes}
+Major modes where
+@samp{global-multi-region-mode} stays off@comma{} so that C-drag keeps its own
+meaning there: Dired@comma{} Magit@comma{} Ibuffer and terminal buffers by default.
+@code{M-x multi-region-mode} still turns it on in one of them.
+@item @samp{multi-region-restore-history}
+How many deselected sets @code{C-c M /}
+can bring back.  5 by default.
 @item @samp{multi-region-face}
 How selections look.  Like the region@comma{} by
 default.
