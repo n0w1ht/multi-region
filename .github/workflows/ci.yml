@@ -39,9 +39,13 @@ jobs:
         with:
           path: multi-region
 
-      - uses: purcell/setup-emacs@master
-        with:
-          version: '30.1'
+      # pdf-tools draws its pages as PNG images, and the Emacs builds of
+      # setup-emacs have no PNG support; Ubuntu's Emacs has it.
+      - name: Emacs with PNG support
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends emacs-gtk
+          emacs --batch --eval '(unless (image-type-available-p (quote png)) (kill-emacs 1))'
 
       - name: pdf-tools and tablist sources
         run: |
