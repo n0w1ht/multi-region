@@ -262,5 +262,37 @@
         (should-not (eq (key-binding (kbd "C-c s w")) 'multi-region-copy)))
     (customize-set-variable 'multi-region-prefix-key "C-c M")))
 
+;;;; Global mode and docstrings
+
+(define-derived-mode multi-region-test-dired-like-mode special-mode "DiredLike")
+
+(ert-deftest multi-region-test-global-mode-skips-ignored-modes ()
+  (let ((multi-region-ignored-modes '(multi-region-test-dired-like-mode)))
+    (with-temp-buffer
+      (multi-region-test-dired-like-mode)
+      (multi-region--turn-on)
+      (should-not multi-region-mode))
+    (with-temp-buffer
+      (text-mode)
+      (multi-region--turn-on)
+      (should multi-region-mode))))
+
+(ert-deftest multi-region-test-docstrings-name-keys ()
+  ;; A single backslash before [command] shows the brackets literally.
+  (dolist (fn '(multi-region-kill multi-region-replace multi-region-restore
+                multi-region-clear))
+    (should-not (string-match-p "\\[\\(?:undo\\|multi-region-[a-z-]+\\)\\]"
+                                (documentation fn)))))
+
+(ert-deftest multi-region-test-nov-advice-removed-when-off ()
+  (with-temp-buffer
+    (cl-letf (((symbol-function 'multi-region--nov-p) (lambda () t)))
+      (multi-region-mode 1)
+      (should (advice-member-p #'multi-region--nov-around-render
+                               'nov-render-document))
+      (multi-region-mode -1)
+      (should-not (advice-member-p #'multi-region--nov-around-render
+                                   'nov-render-document)))))
+
 (provide 'multi-region-test)
 ;;; multi-region-test.el ends here

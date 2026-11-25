@@ -1,5 +1,5 @@
 #+title: multi-region: select several pieces of text at once
-#+subtitle: for version 0.5.0
+#+subtitle: for version 0.6.0
 #+author: Hormoz Zamanpour Siahkal
 #+language: en
 #+options: H:3 num:t toc:t ':t
@@ -231,6 +231,7 @@ them the same commands as in a pdf-tools buffer, and ~C-g~ remembers
 what it deselects, so ~C-c M /~ can bring it back.
 
 * Options
+#+vindex: multi-region-ignored-modes
 
 Change these with ~M-x customize-group RET multi-region~, or with
 =setq= in your init file.
@@ -246,6 +247,10 @@ Change these with ~M-x customize-group RET multi-region~, or with
   selected pictures.  4 by default; 0 for none.
 - =multi-region-prefix-key= :: The key that leads to the commands.
   ~C-c M~ by default; see [[*Other keys][Other keys]].
+- =multi-region-ignored-modes= :: Major modes where
+  =global-multi-region-mode= stays off, so that C-drag keeps its own
+  meaning there: Dired, Magit, Ibuffer and terminal buffers by default.
+  ~M-x multi-region-mode~ still turns it on in one of them.
 - =multi-region-face= :: How selections look.  Like the region, by
   default.
 

@@ -1,4 +1,4 @@
-This is multi-region.info, produced by makeinfo version 7.1.1 from
+This is multi-region.info, produced by makeinfo version 7.1 from
 multi-region.texi.
 
 INFO-DIR-SECTION Emacs misc features
@@ -372,6 +372,11 @@ in your init file.
 ‘multi-region-prefix-key’
      The key that leads to the commands.  ‘C-c M’ by default; see *note
      Other keys: Other keys.
+‘multi-region-ignored-modes’
+     Major modes where ‘global-multi-region-mode’ stays off, so that
+     C-drag keeps its own meaning there: Dired, Magit, Ibuffer and
+     terminal buffers by default.  ‘M-x multi-region-mode’ still turns
+     it on in one of them.
 ‘multi-region-face’
      How selections look.  Like the region, by default.
 
@@ -485,6 +490,7 @@ Option index
 * Menu:
 
 * multi-region-command-map:              Other keys.            (line 6)
+* multi-region-ignored-modes:            Options.               (line 6)
 * multi-region-image-margin:             Pictures.              (line 6)
 * multi-region-keep-after-copy:          Copying and killing.   (line 6)
 * multi-region-mode-map:                 Other keys.            (line 6)
@@ -495,31 +501,31 @@ Option index
 
 
 Tag Table:
-Node: Top245
-Node: Getting started1723
-Node: Turning it on1895
-Node: A first try2347
-Node: Selecting2840
-Node: With the mouse3024
-Node: With the keyboard3794
-Node: Using the selections4235
-Node: Copying and killing5261
-Node: Changing all selections at once5995
-Node: Moving between selections6545
-Node: Deselecting and bringing back6852
-Node: Pictures7562
-Node: In each kind of buffer8348
-Node: Text Org Markdown and code8664
-Node: eww and other read-only buffers8896
-Node: EPUB books9429
-Node: PDFs (pdf-tools)9820
-Node: PDFs (pdf-canvas)10804
-Node: Options11232
-Node: Other keys12193
-Node: For other packages12916
-Node: When pdf-tools is updated13813
-Node: Command index14451
-Node: Option index16575
+Node: Top243
+Node: Getting started1721
+Node: Turning it on1893
+Node: A first try2345
+Node: Selecting2838
+Node: With the mouse3022
+Node: With the keyboard3792
+Node: Using the selections4233
+Node: Copying and killing5259
+Node: Changing all selections at once5993
+Node: Moving between selections6543
+Node: Deselecting and bringing back6850
+Node: Pictures7560
+Node: In each kind of buffer8346
+Node: Text Org Markdown and code8662
+Node: eww and other read-only buffers8894
+Node: EPUB books9427
+Node: PDFs (pdf-tools)9818
+Node: PDFs (pdf-canvas)10802
+Node: Options11230
+Node: Other keys12466
+Node: For other packages13189
+Node: When pdf-tools is updated14086
+Node: Command index14724
+Node: Option index16848
 
 End Tag Table
 

@@ -17,6 +17,7 @@
 
 ;;; Code:
 
+(require 'seq)
 (require 'multi-region-text)
 
 (defvar multi-region-mode)
@@ -91,6 +92,18 @@ ARGS are passed on unchanged.  This is advice for
   ;; Does nothing in buffers where the mode is off.
   (advice-add 'nov-render-document :around
               #'multi-region--nov-around-render))
+
+(defun multi-region--nov-teardown ()
+  "Stop keeping selections across chapters, once no EPUB buffer needs it.
+The advice is shared by all buffers; it goes when the mode is off in
+every nov.el buffer."
+  (unless (seq-some (lambda (buffer)
+                      (and (not (eq buffer (current-buffer)))
+                           (buffer-local-value 'multi-region-mode buffer)
+                           (with-current-buffer buffer
+                             (multi-region--nov-p))))
+                    (buffer-list))
+    (advice-remove 'nov-render-document #'multi-region--nov-around-render)))
 
 ;;;; Reading the selections of all chapters
 

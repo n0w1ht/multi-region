@@ -1,6 +1,6 @@
 ;;; multi-region.el --- Select several separate regions at once  -*- lexical-binding: t; -*-
 
-;; Version: 0.5.0
+;; Version: 0.6.0
 ;; Package-Requires: ((emacs "27.1"))
 ;; Keywords: convenience, mouse
 
@@ -220,7 +220,7 @@ Such a buffer has no text to move point over."
 
 (defun multi-region--absorb-region ()
   "Turn the active region, if there is one, into a selection."
-  (when (and (not (multi-region--pdf-p)) (use-region-p))
+  (when (and (not (multi-region--paged-p)) (use-region-p))
     ;; `region-bounds' also covers rectangles, one piece per line.
     (let ((bounds (region-bounds)))
       (deactivate-mark)
@@ -317,13 +317,13 @@ it and SELECTIONS in the form that viewer keeps them.")
   "Deselect everything in the current buffer.
 \\[multi-region-restore] brings it back."
   (interactive)
-  (let ((rects multi-region--pdf-rects))
-    (when (multi-region--any-p)
-      (setq multi-region--cleared (multi-region--snapshot)))
-    (multi-region--reset)
-    (pcase (multi-region--viewer)
-      ('canvas (pdf-canvas-clear-selections))
-      ('pdf (multi-region--pdf-clear rects)))))
+  (when (multi-region--any-p)
+    (setq multi-region--cleared (multi-region--snapshot)))
+  (pcase (multi-region--viewer)
+    ('canvas (multi-region--reset)
+             (pdf-canvas-clear-selections))
+    ('pdf (multi-region--pdf-clear))
+    (_ (multi-region--reset))))
 
 (defun multi-region-restore ()
   "Select again what was deselected all at once, last time.
@@ -393,8 +393,8 @@ and on other pages.  Afterwards everything is deselected unless
 
 (defun multi-region-kill ()
   "Kill all selections: copy them as one string, then delete them.
-An active region counts as one more selection.  After \[undo] puts
-the text back, \[multi-region-restore] selects it again."
+An active region counts as one more selection.  After \\[undo] puts
+the text back, \\[multi-region-restore] selects it again."
   (interactive)
   (multi-region--assert-text)
   (multi-region--absorb-region)
@@ -412,8 +412,8 @@ the text back, \[multi-region-restore] selects it again."
 
 (defun multi-region-replace (string)
   "Replace the text of every selection with STRING.
-Afterwards \[multi-region-restore] selects the replacements; after
-\[undo], the text they replaced."
+Afterwards \\[multi-region-restore] selects the replacements; after
+\\[undo], the text they replaced."
   (interactive
    (progn
      (multi-region--assert-text)
@@ -604,11 +604,24 @@ deselects them.
    (t
     (remove-hook 'change-major-mode-hook #'multi-region--reset t)
     (multi-region--pdf-teardown)
+    (multi-region--nov-teardown)
     (multi-region--reset))))
 
+(defcustom multi-region-ignored-modes
+  '(dired-mode magit-section-mode ibuffer-mode
+    vterm-mode eat-mode term-mode eshell-mode)
+  "Major modes in which `global-multi-region-mode' leaves the mode off.
+Modes derived from them count too.  In these buffers C-drag and
+\\[kill-ring-save] keep doing what the major mode makes them do.
+`multi-region-mode' can still be turned on by hand there."
+  :type '(repeat symbol)
+  :group 'multi-region)
+
 (defun multi-region--turn-on ()
-  "Turn on `multi-region-mode', except in the minibuffer."
-  (unless (minibufferp)
+  "Turn on `multi-region-mode', except where it does not belong.
+That is the minibuffer and buffers in `multi-region-ignored-modes'."
+  (unless (or (minibufferp)
+              (apply #'derived-mode-p multi-region-ignored-modes))
     (multi-region-mode 1)))
 
 ;;;###autoload

@@ -28,6 +28,7 @@
 (declare-function pdf-view-deactivate-region "ext:pdf-view")
 (declare-function pdf-view-redisplay "ext:pdf-view")
 (declare-function pdf-info-gettext "ext:pdf-info")
+(declare-function multi-region--reset "multi-region")
 
 (defvar-local multi-region--pdf-regions nil
   "PDF regions remembered per page, as an alist of (PAGE . REGIONS).
@@ -268,7 +269,11 @@ This goes on `deactivate-mark-hook', after pdf-tools' own function."
   "Undo `multi-region--pdf-setup'."
   (remove-hook 'pdf-view-before-change-page-hook #'multi-region--pdf-save t)
   (remove-hook 'pdf-view-after-change-page-hook #'multi-region--pdf-restore t)
-  (remove-hook 'deactivate-mark-hook #'multi-region--pdf-after-deactivate t))
+  (remove-hook 'deactivate-mark-hook #'multi-region--pdf-after-deactivate t)
+  (remove-hook 'post-command-hook #'multi-region--pdf-show-now t)
+  (when (timerp multi-region--pdf-timer)
+    (cancel-timer multi-region--pdf-timer))
+  (setq multi-region--pdf-timer nil))
 
 ;;;; Reading the selections
 
@@ -395,12 +400,13 @@ display, and RECTS the picture areas."
      (t
       (pdf-view-deactivate-region)))))
 
-(defun multi-region--pdf-clear (had-rects)
-  "Draw the page without selections, after they were forgotten.
-HAD-RECTS non-nil means picture areas were selected."
-  (cond ((multi-region--pdf-edges)
-         (pdf-view-deactivate-region))
-        (had-rects (pdf-view-redisplay t))))
+(defun multi-region--pdf-clear ()
+  "Deselect everything in a PDF, and draw the page without selections."
+  (let ((had-rects multi-region--pdf-rects))
+    (multi-region--reset)
+    (cond ((multi-region--pdf-edges)
+           (pdf-view-deactivate-region))
+          (had-rects (pdf-view-redisplay t)))))
 
 (defun multi-region--pdf-reset ()
   "Forget the regions of other pages and all picture areas."

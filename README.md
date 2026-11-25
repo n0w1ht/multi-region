@@ -163,6 +163,7 @@ Set these with `M-x customize-group RET multi-region` or `setq`:
 | `multi-region-thing`            | `word`  | What `C-c M SPC` selects without a region: `word`, `symbol`, `sentence`, `line`, or any `thing-at-point` thing |
 | `multi-region-keep-after-copy`  | `nil`   | Keep the selections after copying them                         |
 | `multi-region-prefix-key`       | `"C-c M"` | Key that leads to the commands; `nil` for none               |
+| `multi-region-ignored-modes`   | Dired, Magit, terminals | Major modes where `global-multi-region-mode` stays off       |
 | `multi-region-face`             | `region`| Face of the selections                                         |
 | `multi-region-image-margin`     | `4`     | Width in pixels of the band around selected pictures; 0 for none |
 
