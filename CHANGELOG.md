@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- Adding a selection takes the same time however many there are:
+  4000 selections are added in 0.2 seconds, not 6.
+- In pdf-tools buffers copying reads each selected text from the PDF
+  once, not twice, and C-g reads only the few it shows in the history.
+- When an EPUB chapter is filled to another width, a selection goes
+  back to the match nearest where it was, not to the first in the
+  chapter; two selections of the same words no longer land together.
+
 ## 0.6.0 (2026-11-24)
 
 - Split into one file per viewer: text, EPUB (nov.el), PDF (pdf-tools),

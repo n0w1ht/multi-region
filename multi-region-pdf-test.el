@@ -344,5 +344,32 @@ It deselects first, as pdf-tools does.  RECT nil imitates a click."
     (cl-letf (((symbol-function 'multi-region--pdf-p) (lambda () t)))
       (should (eq (key-binding [M-down-mouse-1]) 'multi-region-pdf-mouse-rectangle)))))
 
+(ert-deftest multi-region-test-pdf-reads-text-sparingly ()
+  ;; Each string is a call to the epdfinfo server.
+  (multi-region-test--with-pdf t
+    (let ((calls 0)
+          (gettext (symbol-function 'pdf-info-gettext)))
+      (cl-letf (((symbol-function 'pdf-info-gettext)
+                 (lambda (&rest args) (cl-incf calls) (apply gettext args))))
+        (dotimes (page 20)
+          (multi-region-test--turn-to (1+ page))
+          (multi-region-test--select t (1+ page) '(0.1 0.1 0.5 0.2)))
+        (should (= (multi-region--count) 20))
+        ;; Copying reads each string once, also for the history.
+        (let ((kill-ring nil))
+          (multi-region-copy))
+        (should (= calls 20))
+        (should (string-prefix-p "p1:0.1 | p2:0.1"
+                                 (plist-get (car multi-region--history) :preview)))
+        ;; Deselecting reads only what the preview shows.
+        (multi-region-restore)
+        (setq calls 0)
+        (cl-letf (((symbol-function 'keyboard-quit) #'ignore))
+          (multi-region-keyboard-quit))
+        (should (= (multi-region--count) 0))
+        (should (< calls 20))
+        (should (string-prefix-p "p1:0.1 | p2:0.1"
+                                 (plist-get (car multi-region--history) :preview)))))))
+
 (provide 'multi-region-pdf-test)
 ;;; multi-region-pdf-test.el ends here

@@ -341,10 +341,20 @@ where it was there.")
                              (mapconcat #'identity texts " | "))
    60 nil nil "…"))
 
+(defun multi-region--preview-texts (snapshot)
+  "Return enough of the strings of SNAPSHOT to preview it.
+In a pdf-tools buffer each string is read from the PDF, so only the
+first few are read there."
+  (ignore-errors
+    (if (eq (car snapshot) 'pdf)
+        (mapcar #'multi-region--join-hyphens
+                (multi-region--pdf-preview-texts (cdr snapshot) 60))
+      (multi-region--texts))))
+
 (defun multi-region--remember (snapshot reason &optional texts)
   "Add SNAPSHOT, from `multi-region--snapshot', to the history.
 REASON says what deselected it.  TEXTS are its strings, if known."
-  (let ((texts (or texts (ignore-errors (multi-region--texts)))))
+  (let ((texts (or texts (multi-region--preview-texts snapshot))))
     (push (list :viewer (car snapshot)
                 :selections (cdr snapshot)
                 :count (multi-region--count)
@@ -365,10 +375,11 @@ REASON says what deselected it.  TEXTS are its strings, if known."
     ('pdf (multi-region--pdf-clear))
     (_ (multi-region--reset))))
 
-(defun multi-region--clear (reason)
-  "Deselect everything, remembering it under REASON if anything was selected."
+(defun multi-region--clear (reason &optional texts)
+  "Deselect everything, remembering it under REASON if anything was selected.
+TEXTS are the selected strings, if known."
   (when (multi-region--any-p)
-    (multi-region--remember (multi-region--snapshot) reason))
+    (multi-region--remember (multi-region--snapshot) reason texts))
   (multi-region--clear-now))
 
 (defun multi-region-clear ()
@@ -527,7 +538,7 @@ and on other pages.  Afterwards everything is deselected unless
     (kill-new (mapconcat #'identity texts
                          (or separator multi-region-separator)))
     (unless multi-region-keep-after-copy
-      (multi-region--clear "copy"))
+      (multi-region--clear "copy" texts))
     (message "Copied %d selection%s"
              (length texts) (if (cdr texts) "s" ""))))
 

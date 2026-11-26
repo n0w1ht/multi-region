@@ -329,6 +329,24 @@ Picture areas are left out."
           (seq-remove (lambda (s) (plist-get s :figure))
                       (multi-region--pdf-selections))))
 
+(defun multi-region--pdf-preview-texts (snapshot length)
+  "Return the strings of the first text regions in SNAPSHOT, page by page.
+SNAPSHOT is from `multi-region--pdf-snapshot'.  Each string is read
+from the PDF, so reading stops once they hold LENGTH characters."
+  (let ((style (bound-and-true-p pdf-view-selection-style))
+        (n 0)
+        texts)
+    (catch 'done
+      (dolist (entry (sort (copy-sequence (plist-get snapshot :regions))
+                           (lambda (a b) (< (car a) (car b)))))
+        (dolist (e (cdr entry))
+          (let ((text (pdf-info-gettext (car entry) e style)))
+            (push text texts)
+            (setq n (+ n (length text)))
+            (when (>= n length)
+              (throw 'done nil))))))
+    (nreverse texts)))
+
 (defun multi-region--pdf-count ()
   "Return the number of selections in a PDF, on all pages."
   (let ((page (multi-region--pdf-live-page))

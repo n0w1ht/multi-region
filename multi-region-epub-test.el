@@ -80,5 +80,22 @@
                        '((:beg 1 :end 16 :text "Chapter * text." :chapter 2
                           :images ((:beg 9 :end 10 :file "/tmp/e.png"))))))))))
 
+(ert-deftest multi-region-test-epub-restore-nearest ()
+  ;; The chapter was filled to another width, so the stashed positions
+  ;; are off; each selection goes to the match nearest where it was.
+  (with-temp-buffer
+    (insert "the cat and the dog and the bird and the fish")
+    (multi-region-mode 1)
+    (defvar nov-documents-index)
+    (let ((nov-documents-index 2))
+      (cl-letf (((symbol-function 'multi-region--nov-p) (lambda () t)))
+        (setq multi-region--nov-stash
+              (list (cons 2 (list (list 27 30 "the") (list 28 31 "the")
+                                  (list 3 15 "cat\nand the")))))
+        (multi-region--nov-restore)
+        (should (equal (mapcar (lambda (s) (plist-get s :beg))
+                               (multi-region-selections))
+                       '(5 25 38)))))))
+
 (provide 'multi-region-epub-test)
 ;;; multi-region-epub-test.el ends here

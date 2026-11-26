@@ -54,11 +54,34 @@ IMAGES), IMAGES as `multi-region--images' returns them.")
              (split-string text "[ \t\n\r]+" t)
              "[ \t\n\r]+"))
 
+(defun multi-region--nearest-match (regexp pos)
+  "Return (BEG . END) of the match of REGEXP that starts nearest POS.
+Matches that start in a selection are passed over, so that two
+selections of the same words do not land on the same place.  Return
+nil if there is no such match."
+  (let (best)
+    (unless (equal regexp "")
+      (save-excursion
+        (goto-char (point-min))
+        (while (and (re-search-forward regexp nil t)
+                    ;; Further matches are only further away.
+                    (not (and best
+                              (> (match-beginning 0) pos)
+                              (>= (- (match-beginning 0) pos)
+                                  (abs (- (car best) pos))))))
+          (let ((beg (match-beginning 0)))
+            (unless (seq-some (lambda (ov) (overlay-get ov 'multi-region))
+                              (overlays-at beg))
+              (when (or (null best)
+                        (< (abs (- beg pos)) (abs (- (car best) pos))))
+                (setq best (cons beg (match-end 0)))))))))
+    best))
+
 (defun multi-region--nov-restore ()
   "Reselect the stashed selections of the chapter just rendered.
 The chapter may have been filled to a different width since, so a
 selection whose text is no longer at its old position is searched
-for instead."
+for instead, nearest that position."
   (let ((entries (alist-get nov-documents-index multi-region--nov-stash))
         (case-fold-search nil))
     (when entries
@@ -71,11 +94,10 @@ for instead."
           (if (and (<= end (point-max))
                    (string= (buffer-substring-no-properties beg end) text))
               (multi-region--add beg end)
-            (save-excursion
-              (goto-char (point-min))
-              (when (re-search-forward (multi-region--flexible-regexp text)
-                                       nil t)
-                (multi-region--add (match-beginning 0) (match-end 0))))))))))
+            (let ((match (multi-region--nearest-match
+                          (multi-region--flexible-regexp text) beg)))
+              (when match
+                (multi-region--add (car match) (cdr match))))))))))
 
 (defun multi-region--nov-around-render (orig-fun &rest args)
   "Carry selections over a chapter rendering done by ORIG-FUN.

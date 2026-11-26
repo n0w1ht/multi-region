@@ -53,10 +53,15 @@ one.  Return the new overlay, or nil if the text is empty."
           (last (multi-region--image-bounds (1- end))))
       (when first (setq beg (min beg (car first))))
       (when last (setq end (max end (cdr last)))))
-    (dolist (old (multi-region--live))
+    ;; Only the selections near the new one are looked at, so that
+    ;; adding stays quick however many there are.  One char further on
+    ;; each side finds those that merely touch it.
+    (dolist (old (overlays-in (max (point-min) (1- beg))
+                              (min (point-max) (1+ end))))
       (let ((s (overlay-start old))
             (e (overlay-end old)))
-        (when (and (<= s end) (>= e beg))
+        (when (and (overlay-get old 'multi-region)
+                   (<= s end) (>= e beg))
           (setq beg (min beg s)
                 end (max end e))
           (delete-overlay old))))
@@ -71,14 +76,17 @@ one.  Return the new overlay, or nil if the text is empty."
       (when (multi-region--nov-p)
         (overlay-put ov 'multi-region-chapter nov-documents-index))
       (push ov multi-region--overlays)
-      (multi-region--decorate)
+      (multi-region--undecorate beg end)
+      (multi-region--decorate-overlay ov)
       (force-mode-line-update)
       ov)))
 
 (defun multi-region--delete (ov)
   "Deselect the selection overlay OV."
-  (delete-overlay ov)
-  (multi-region--decorate)
+  (let ((beg (overlay-start ov))
+        (end (overlay-end ov)))
+    (delete-overlay ov)
+    (multi-region--undecorate beg end))
   (force-mode-line-update))
 
 (defun multi-region--text-texts ()
@@ -281,34 +289,44 @@ Each is a plist (:beg BEG :end END :file FILE), or (:beg BEG :end END
   "Draw a band around every selected picture, and none around others."
   (mapc #'delete-overlay multi-region--decor)
   (setq multi-region--decor nil)
+  (mapc #'multi-region--decorate-overlay (multi-region--live)))
+
+(defun multi-region--undecorate (beg end)
+  "Remove the bands drawn around pictures between BEG and END."
+  (dolist (decor (overlays-in beg end))
+    (when (overlay-get decor 'multi-region-decor)
+      (delete-overlay decor)))
+  (setq multi-region--decor (seq-filter #'overlay-buffer multi-region--decor)))
+
+(defun multi-region--decorate-overlay (ov)
+  "Draw a band around every picture in the selection overlay OV."
   (when (and (> multi-region-image-margin 0) (display-images-p))
-    (let (marked)
-      (dolist (ov (multi-region--live))
-        (let ((pos (overlay-start ov))
-              (end (overlay-end ov)))
-          (while (< pos end)
-            (let* ((next (next-single-char-property-change pos 'display nil end))
-                   (display (multi-region--display-at pos))
-                   (image (multi-region--image-in display)))
-              (when image
-                (let ((new (or (cdr (assq image marked))
-                               (let ((new (cons 'image
-                                                (plist-put
-                                                 (copy-sequence (cdr image))
-                                                 :margin
-                                                 multi-region-image-margin))))
-                                 (push (cons image new) marked)
-                                 new)))
-                      (decor (make-overlay pos next nil)))
-                  (overlay-put decor 'multi-region-decor t)
-                  ;; The margin takes this face's background.
-                  (overlay-put decor 'face 'multi-region-face)
-                  (overlay-put decor 'priority 100)
-                  (overlay-put decor 'evaporate t)
-                  (overlay-put decor 'display
-                               (multi-region--subst-image display image new))
-                  (push decor multi-region--decor)))
-              (setq pos next))))))))
+    (let ((pos (overlay-start ov))
+          (end (overlay-end ov))
+          marked)
+      (while (< pos end)
+        (let* ((next (next-single-char-property-change pos 'display nil end))
+               (display (multi-region--display-at pos))
+               (image (multi-region--image-in display)))
+          (when image
+            (let ((new (or (cdr (assq image marked))
+                           (let ((new (cons 'image
+                                            (plist-put
+                                             (copy-sequence (cdr image))
+                                             :margin
+                                             multi-region-image-margin))))
+                             (push (cons image new) marked)
+                             new)))
+                  (decor (make-overlay pos next nil)))
+              (overlay-put decor 'multi-region-decor t)
+              ;; The margin takes this face's background.
+              (overlay-put decor 'face 'multi-region-face)
+              (overlay-put decor 'priority 100)
+              (overlay-put decor 'evaporate t)
+              (overlay-put decor 'display
+                           (multi-region--subst-image display image new))
+              (push decor multi-region--decor)))
+          (setq pos next))))))
 
 ;;;; Mouse
 
